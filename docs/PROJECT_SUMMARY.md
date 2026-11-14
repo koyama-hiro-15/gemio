@@ -1,0 +1,382 @@
+# 📌 プロジェクト改修作業の要約（サマリー）
+作成日: 2026年10月28日
+
+本ドキュメントでは、これまでに実施したAIコーディングエージェントプロジェクトの構成整理、自動テスト導入、機能拡張、およびバグ修正などの主な作業内容を要約して記録します。
+
+> **⚠️ 注意:** サマリに内容を追記する際は、必ず末尾に追記し、作業日付を付加すること。
+
+---
+
+## 1. プロジェクト構成の整理（リファクタリング）
+将来的な保守性・拡張性・テストのしやすさを向上させるため、従来のフラットなファイル構成から、責務ごとに分かれたクリーンなディレクトリ構成（`src/` 配下）へ移行しました。
+
+- **`src/core/`**: 
+  - `agent.py`: AI対話およびツール呼び出しループを管理する `AIChatAgent` クラス。
+  - `tools.py`: 四則演算や型変換などの汎用計算ツール。
+- **`src/project/`**: 
+  - `base.py`: ファイル操作、セキュリティ検証、Human-in-the-loop（承認機構）を管理する `Project` 基底クラス。
+  - `python.py`: AST解析、構文チェック、パッチ適用、シンボル検索、テスト実行等を担当する `PythonModule` および `PythonProject` クラス。
+- **`src/cli/`**: 
+  - `main.py`: 複数行入力やEsc+Enter送信に対応したCLI対話型インターフェース。
+- **旧ファイルの削除**: ルート直下にあった重複ファイルを安全に削除。
+
+---
+
+## 2. 自動テスト環境の構築 (`tests/`)
+品質担保とデグレ防止のため、`pytest` を用いた自動テスト環境を構築し、全テストケースが合格することを確認しています。
+
+- **`tests/test_tools.py`**: 計算・汎用ツールの単体テスト。
+- **`tests/test_project_base.py`**: ファイル読み書き、ディレクトリ作成、パストラバーサル検証（セキュリティ）、置換処理などのテスト（`tmp_path` フィクスチャを使用）。
+- **`tests/test_project_python.py`**: 構文チェック、モジュール構造解析、シンボル参照検索、およびAST要素の行範囲取得・プレビュー機能のテスト。
+
+---
+
+## 3. 手動テストガイドラインの策定
+- 自動テストでカバーできない「AI対話」「対話型CLI」「Human-in-the-loopの承認要求」などの機能について、手動で品質を確認するための手順書を **`MANUAL_TEST_GUIDELINE.md`** として作成・保存。
+
+---
+
+## 4. 機能拡張・改善履歴
+
+### ① AIエージェントのツール呼び出し上限に関する改善
+- **継続・中断の選択機能**:
+  - ツール呼び出し回数が上限（`max_iterations`）に達した際、自動で中断するのではなく、コンソール上でユーザーに「追加ループの継続」か「中断」かを選択できるプロンプトを表示するように拡張。
+- **追加ループの無限継続対応**:
+  - ユーザーが継続を選択し、追加ループでも上限に達した場合に勝手に終了せず、再びユーザーに継続か中断かを問いかけるループ構造に改良。
+- **コード重複の排除（リファクタリング）**:
+  - 初回ループと追加ループで重複していたFunction Callingのハンドリング処理を、共通ヘルパーメソッド `_execute_agent_loop` に抽出。
+- **文字列結合の安全化**:
+  - 上限到達警告の区切り線（`"=" * 50`）が文字列全体に影響して意図しない大量表示を引き起こしていた問題を解消するため、変数を完全に分離して `+` で安全に結合するよう修正。
+
+### ② AST要素の行範囲取得・コード抽出ツール（新機能）の追加
+- **`get_symbol_range` / `preview_symbol`**:
+  - 指定されたクラス名や関数名のASTノードを探索し、ファイル全体を読み込まずに開始行（`lineno`）と終了行（`end_lineno`）の範囲を特定して、そのピンポイントなコード範囲だけを抽出・プレビューできる仕組みを `PythonModule` / `PythonProject` に実装し、AIエージェントのツールに追加。
+
+### ③ コマンドライン引数によるプロジェクトディレクトリ指定の対応
+- **CLIの拡張 (`src/cli/main.py`)**:
+  - 起動時にコマンドライン引数としてプロジェクトディレクトリのパスを指定できるように変更。
+  - 引数が未指定（省略）の場合は、デフォルトで `.`（カレントディレクトリ）をプロジェクトパスとして使用する仕様を採用。
+  - 指定されたパスの存在確認やディレクトリ判定のバリデーションを追加し、セキュリティガードレール（パストラバーサル防止等）を維持しつつ柔軟なディレクトリ指定を実現。
+
+---
+
+## 5. 更新履歴（ここから追記）
+- **2026年10月28日**: プロジェクトサマリの項目並べ替え、番号振り直し、日付の追加および「追記のルール（末尾に追記し日付を付加すること）」の注意書きを策定・追記。
+- **2026年10月28日**: アプリケーションのリポジトリ名を `Gemio` に決定し、プロジェクトの各ドキュメント（サマリ等）やCLIのUI表記・承認要求メッセージの `AIエージェント` ➔ `Gemio` 表記への反映。
+- **2026年10月28日**: CLI起動時の操作案内メッセージから「（または Ctrl+J）」および「か Ctrl+C を押してください」の文言を削除。
+- **2026年10月28日**: 日時取得ツールの追加
+  - `src/core/tools.py` に `get_current_date()`（現在日付の取得）および `get_current_time()`（現在時刻の取得）を実装し、エージェントが正確な日時を参照できるように拡張。
+- **2026年10月28日**: CLIのUI装飾とリッチ表示対応 (`rich` ライブラリの導入)
+  - `rich` ライブラリを導入し、AIエージェントの思考・実行中ステータス（スピナー表示）、ログのマークダウン変換およびコードブロックのシンタックスハイライト、パネル装飾を追加。不要なコンソール出力の整理・削除を実施。
+- **2026年10月28日**: `write_file` への Human-in-the-loop（承認機能）追加
+  - 安全性向上のため、ファイル書き込み操作時にもユーザーの事前承認（`_confirm`）を必須とするようガードレールを強化。
+- **2026年10月28日**: `PythonProject` の承認機能引数引き継ぎ対応および自動テストの修正
+  - 派生クラス `PythonProject.__init__` に `require_approval: bool = True` を追加して親クラスに引き渡すようにし、基底クラスとインターフェースを統一。
+  - `tests/test_project_python.py` のフィクスチャで `require_approval=False` を指定し、非対話環境でのテスト実行時にファイル書き込みが拒否される問題を解消（全17件の自動テストが正常通過することを確認）。
+- **2026年10月28日**: 承認拒否時のAIへのフィードバックメッセージ強化
+  - `Project` および `PythonProject` の各破壊的操作において、ユーザーによって操作が拒否された際の戻り値に「勝手な判断で変更を行わず、ユーザーに変更内容や意図を説明し、承認を求めてください。」という指示・促し文言を追加。
+- **2026年10月28日**: Human-in-the-loopおよびエージェント実行上限の入出力処理のUI分離（コールバック注入方式へのリファクタリング）
+  - `Project` / `PythonProject` における破壊的操作の承認要求（`_confirm`）について、従来の `print()` / `input()` 依存からコールバック関数（`approval_callback`）を受け取る設計に変更。
+  - `AIChatAgent` におけるツール連続実行上限到達時の継続・中断問い合わせについても、同様にコールバック関数（`on_iteration_limit`）を受け取る設計に変更。
+  - CLI（`src/cli/main.py`）側で `rich.prompt.Confirm` および `rich.prompt.Prompt` を用いたリッチな承認・確認UIハンドラを実装・注入し、ビジネスロジックからコンソール入出力処理を分離。
+  - `tests/test_project_base.py` に `approval_callback` の承認時・拒否時の挙動を検証するユニットテストを追加。
+- **2026年10月29日**: AIモデル切り替え機能の実装
+  - `src/core/agent.py`: `AIChatAgent` に `set_model(model_name: str)` メソッドを追加し、会話履歴を維持したまま動的にAIモデルを切り替え可能に対応。
+  - `src/cli/main.py`:
+    - デフォルトモデルとして最新Flashモデル `gemini-flash-latest` を設定。
+    - 最新最上位モデル `gemini-4-argon`、最新フラッシュの固定指定 `gemini-3.8-flash`、前世代FlashやLiteモデルを含むプリセットおよびエイリアス解決ロジック（`resolve_model_name`）を実装。
+    - コマンドライン引数 `--model` / `-m` による起動時のモデル指定に対応。
+    - 対話セッション中に利用可能な `/model` コマンドを追加（直接指定 `/model <名前>`、およびプリセット一覧から選択可能な対話的UIを実装）。
+  - `tests/test_model_selection.py`: エイリアス解決や大文字小文字対応、カスタムモデルのフォールバック、およびエージェントのモデル切り替え動作を検証する単体テストを追加（全テスト通過を確認）。
+- **2026年10月29日**: 手動テストマニュアル（`MANUAL_TEST_GUIDELINE.md`）への Git ワークツリーを活用した安全なテスト手順の追加
+  - メイン作業ツリーや未コミットの変更を汚さずに完全な隔離環境でテスト・修正を実施するための一連のワークツリー手順（テスト用コミットの作成、ワークツリー作成とテスト・修正、元のブランチへのマージ、後片付け・手動削除時の `git worktree prune` を含むクリーンアップ）を策定・追記。
+  - ルート起点の絶対インポートに伴う起動エラー（`ModuleNotFoundError`）を防止するため、テスト手順内のCLI実行コマンドおよび既存のテストケースA-1のコマンドを `python -m src.cli.main` に統一。
+- **2026年10月29日**: Web検索機能（Google Search Grounding）の導入
+  - **背景・目的**: 最新の言語仕様や外部ライブラリのドキュメント・リリース情報を参照し、推測による回答（ハルシネーション）を防止。
+  - **安全ガードレール・分離設計**: 通常時はWeb検索を無効化しローカル操作ツールの安全性を維持。`/search <query>` または `/s <query>` の明示的コマンド時のみ検索専用リクエストを発行する分離設計を採用し、Gemini APIのFunction Calling制約（同時指定不可）を完全回避。
+  - **検索意図の検知と案内**: ユーザーがコマンドを付け忘れて通常プロンプトで外部最新情報を尋ねた場合、推測で答えず `/search` の使用を促すシステムプロンプトのガードレールを追加。
+  - **`src/core/agent.py`**: `AIChatAgent` に `process_search_prompt` メソッドを追加し、`grounding_metadata` から出典（タイトル・URL）の抽出およびURL重複排除処理を実装。
+  - **`src/cli/main.py`**: `/search` および `/s` コマンド処理、未入力時のヘルプ表示、ウェルカムバナーの案内更新、`rich` による参照元ソース（Sources）のリッチパネル表示を実装。
+  - **自動テスト (`tests/test_agent_search.py`)**: 検索専用Configの分離、出典メタデータ解析と重複排除、会話履歴の保持、通常プロンプトへの非干渉を検証するテストを追加（全26件合格）。
+  - **設計書 (`docs/design_web_search.md`)**: 詳細な機能設計書を作成・配置。
+- **2026年10月29日**: Web検索時の機密情報保護および連続深掘り検索対応
+  - **機密情報の完全隔離**: 作業途中に読み込んだソースコードやAPIキー等の通常作業履歴（`chat_history`）を検索API送信から除外し、外部検索クエリ経由での機密情報漏洩リスクを根本的に排除。
+  - **検索セッション（深掘り検索）**: 検索専用コンテキスト（`search_history`）を導入し、ユーザーが検索結果を見てさらに連続で `/search` した際に追加質問・深掘り検索が行えるように文脈を引き継ぐ仕様を実装。
+  - **セッション管理とリセット**: 通常プロンプト実行時、または `-n` / `--new` オプション指定時に検索セッションを自動リセット。
+  - **通常プロンプト実行時の防衛的コピー適用**: `_execute_agent_loop` 内での `generate_content` 呼び出し時にも `contents=list(self.chat_history)` を適用し、ミュータブルな参照変更による副作用を防止して呼び出し時点のスナップショットを正確に渡す設計に統一。
+  - **テスト拡充**: 通常プロンプトおよび検索プロンプトでのスナップショット検証、機密情報の分離、連続深掘り検索の文脈維持、新規セッション指定や通常プロンプトによるセッションリセットを検証するテストを追加（全30件合格）。
+- **2026年10月30日**: Web検索結果の「作業前提資料」分離・セッション保持・プロンプト先頭インジェクション機能の実装
+  - **背景・課題**:
+    - 検索結果を会話履歴（`chat_history`）にフラットな発話として追加していたため、将来仕様（例: Python 3.15）の検索後に現行環境・安定版に関する質問を受けた際、AIが「動かない構文を確定仕様と誤認したハルシネーションだ」と自己矛盾を感じ、過剰な自己批判（Self-Correction）によって文脈破綻を起こす課題を解消。
+    - Google Search Groundingの暗号化リダイレクトURL（`vertexaisearch...`）がプロンプトに含まれ、トークンを無駄に浪費していた問題を解消。
+  - **アーキテクチャ改修 (`src/core/agent.py`)**:
+    - **資料ストレージ (`search_materials`)**: 検索結果を会話履歴に追加せず、セッション内で蓄積・保持する独立ストレージへ分離。複数回の段階的な検索（例: 言語仕様とツール設定）に対応。
+    - **リダイレクトURLの最適化 (`_extract_source_display`)**: AIプロンプトからは長大なリダイレクトURLを完全に排除し、「タイトル（＋判別可能なドメイン）」のみを簡潔に記載してトークンを削減しつつ説得力を担保。
+    - **プロンプト先頭インジェクション (`_prepare_contents_for_request`)**: 通常プロンプト実行時、蓄積資料をAPI送信用コンテンツの先頭に【作業前提資料】ヘッダーとして自動合成して送信。会話履歴本体（`chat_history`）には生の指示文のみを保持することで履歴の肥大化を防止。
+    - **資料管理**: 資料追加（`add_search_material`）、フォーマット生成（`get_formatted_search_materials`）、明示的破棄（`clear_search_materials`）メソッドを実装。
+  - **CLI・UI拡張 (`src/cli/main.py`)**:
+    - **資料破棄コマンド**: `/search --clear`、`/search -c`、`/s --clear`、`/s -c` を追加。
+    - **ガイドライン追加**: システムプロンプト（`instruction`）に「作業前提資料の取り扱いに関するルール」を追加し、手元環境と資料前提の差異を時間軸やスコープの違いとして客観的に整理する思考指針を明記。コーディング以外の汎用用途（リサーチ・文書作成等）にも完全適合。
+    - **画面ガイダンス**: 検索完了時の保持案内メッセージ、および `/search` ヘルプ画面の更新。
+  - **自動テストおよびドキュメント更新**:
+    - `tests/test_agent_search.py`: 履歴非混濁、資料蓄積、クリア機能、リダイレクトURL除外、プロンプトインジェクションと履歴肥大化防止を検証するテストを追加・更新（全33件合格）。
+    - `docs/design_search_material_integration.md`: 詳細設計書および検証手順書を作成。
+    - `MANUAL_TEST_GUIDELINE.md`: 手動テストグループDに前提資料の蓄積、クリア、インジェクション連携のテストケースを追加。
+- **2026年10月31日**: サーバー混雑・エラー時の自動回復および対話整合性維持（クラッシュ防止）機能の実装
+  - **背景・課題**:
+    - テキスト生成やWeb検索実行時、Gemini APIのサーバー混雑（503）やレート制限（429）、一時的なネットワーク切断等が発生すると例外がキャッチされずCLIプロセス全体がクラッシュしていた問題を解消。
+    - ツール実行（ファイル作成・修正等）の途中でエラーが発生した場合に履歴を巻き戻すとローカル環境への副作用とAIの記憶に乖離が生じる一方、ツール結果を除去するとGemini APIのターン制規約（`function_call` には必ず `function_response` が対になる規約）に違反し `400 Bad Request` になる課題を解決。
+  - **アーキテクチャ改修 (`src/core/agent.py`)**:
+    - **指数バックオフ付き自動リトライ (`_generate_content_with_retry`)**: HTTP 503, 429, 500, 502, 504 および通信タイムアウト等を検知し、最大3回（2秒 → 4秒 → 8秒 ＋ ジッター）自動再試行。待機状況をログ通知。
+    - **副作用の保持と対話整合性担保**: 実行済みツールの戻り値は削除せず保持。リトライ上限到達等で中断した際、履歴末尾が `role="user"` の状態であれば、中断理由と作業継続の案内を含む `role="model"` メッセージを自動補完して対話ターンを正常に終了。
+    - **安全な作業継続**: 中断後にユーザーが「続けてください」と入力しても、「別の作業をして」と方針転換しても、Gemini APIのロール不正（400エラー）を起こさず、ツール結果を踏まえて自然に作業を継続できるように対応。
+    - **Web検索保護**: `process_search_prompt` にもリトライ機構を適用し、エラー時は検索履歴を汚さず安全に復帰。
+  - **CLI包括的エラーハンドリング (`src/cli/main.py`)**:
+    - プロンプト処理およびWeb検索処理ブロックに `try...except Exception as e:` を追加し、予期せぬ例外時でもリッチなエラーパネルを表示してプロセス終了を防止、次のプロンプト入力待ちへ安全に復帰。
+  - **テストおよびドキュメント**:
+    - `docs/design_server_error_recovery.md`: 詳細設計書を作成。
+    - `tests/test_agent_error_recovery.py`: リトライ判定、503発生時の一時回復、ツール実行後中断時の履歴保持とモデル発言補完、次回指示への継続性、Web検索エラー保護を検証する単体テストを追加（全37件合格）。
+- **2026年10月31日**: ウェルカム表示 ＆ ヘルプ機能の実装
+  - **背景・目的**: 対話セッション進行に伴い起動時の操作案内がログに流れて見えなくなる問題を解消。起動時は専用のウェルカムバナーで開始を知らせ、作業中にいつでもコマンドや操作方法を確認できるヘルプ機能（`/help`）として役割を分離。
+  - **CLI改修 (`src/cli/main.py`)**:
+    - `print_welcome_banner`: 起動時に挨拶、プロジェクトパス、使用AIモデル、基本操作（送信・改行方法）、および `/help` コマンドへの案内をすっきりと表示。
+    - `print_help_panel`: 送信・改行ショートカット、全コマンド一覧（`/help`, `/model`, `/search`, `/exit`）、安全設計（Human-in-the-loop）などの詳細リファレンスをRichパネルで表示。
+    - コマンド処理: プロンプト入力時に `/help`, `/h`, `help`, `/info` が入力された場合、ヘルプパネルを表示して対話を継続する処理を追加。
+  - **設計書 (`docs/design_welcome_and_help.md`)**: 詳細設計書を作成・配置。
+- **2026年10月31日**: 設計ドキュメント運用ルールの策定および日付追記
+  - **ドキュメント運用ルール (`docs/DOCUMENTATION_RULE.md`)**:
+    - 設計書・技術仕様書の新規作成および更新時における必須記載事項（日付、要約、ステータス、対象システム、更新履歴）の標準ルールとテンプレートを策定。
+  - **既存設計書への日付反映**:
+    - 日付が未記載だった設計ドキュメント（`docs/design_welcome_and_help.md`）のタイトル直下に作成日（2026年10月31日）を追記。
+- **2026年11月02日**: サンドボックス実行環境および2層モード（基本モード / 開発者モード）アーキテクチャの実装
+  - **PythonProjectの廃止と基本モード（`Project`）への集約**:
+    - 未使用のAST解析・パッチ系ツールによるトークン消費やホスト環境での意図しないコード実行リスクを排除するため、`src/project/python.py`（`PythonProject`）および `tests/test_project_python.py` を廃止。
+    - 外部プロセスを起動せず安全に構文確認できる `syntax_check` のみを `Project` (`src/project/base.py`) に移設。
+  - **開発者モード（`DeveloperProject` / `src/project/developer.py`）の新規実装**:
+    - `--dev` 指定時のみ有効化される `DeveloperProject` を実装。
+    - Dev Container内起動（In-Container）とホストOS起動（`docker exec` 委譲）の両対応を実現し、ホストOSのシェル直接実行を100%禁止。
+    - 特権コンテナ（`--privileged`）や `/var/run/docker.sock` マウント等の危険なコンテナ設定を検知して拒否する `SandboxSecurityError` セーフティゲートを実装。
+    - 子プロセス実行時に `GEMINI_API_KEY` 等の機密環境変数を自動除去（Environment Scrubbing）し、タイムアウト制御・長大出力トランケートを備えた `run_sandbox_command` ツールを実装。
+  - **自律実行モード・詳細ログ表示・暴走防止（サーキットブレーカー＆プロセスキル）の導入**:
+    - 事前同意の上で変更操作を自動承認する自律実行モード（`--auto` / `/auto`）と、全モード共通で機密ファイル（`.env`, 秘密鍵等 ※`.env.example` は許可）や `.git/`・既存 `.devcontainer/` の改ざんをハードブロックする機構を実装。
+    - ツール呼び出しログおよび承認要求メッセージの情報量を拡充し、巨大なテキストデータを自動で文字数・行数統計＋先頭プレビューに省略する機能を実装。
+    - 承認プロンプトを4択（`y`: 許可 / `n`: 拒否 / `a`: 作業強制中止 / `k`: プロセス即時終了）に拡張し、承認拒否後にAIがユーザーへ報告せず連続して変更を強行しようとした際に自動でループを強制遮断するサーキットブレーカー（`AgentExecutionAborted`）を実装。
+  - **設計書およびテスト**:
+    - `docs/design/design_sandbox_and_developer_mode.md`: アーキテクチャ設計書を作成。
+    - `tests/test_project_base.py`, `tests/test_project_developer.py`: 単体テストを拡充・追加し、全49件のテスト通過を確認。
+- **2026年11月03日**: トラストモード（`--trust` / `/trust`）への刷新、ホストOS誤実行防止の厳格化、および多言語開発環境向けのProject最適化
+  - **リスクベース設計に基づく「トラストモード」の導入 (`src/project/base.py`, `src/cli/main.py`)**:
+    - 従来の「自律実行モード」を、信頼できるプロジェクト（自作コードや安全確認済みのリポジトリ）に対してAIに高速な自律作業を委ねる「トラストモード（`--trust` / `/trust`、互換として `--auto` / `/auto` も維持）」へ刷新。
+    - `Project` クラスに `trust_mode` プロパティおよび `set_trust_mode()` を実装し、同意確認パネルの案内文言をプロジェクトの信頼度判断に沿った内容に更新。
+  - **ホストOSでのシェル誤実行防止とコンテナ検証の厳格化 (`src/project/developer.py`)**:
+    - `_is_running_in_container()` から環境変数（`DEVCONTAINER` 等）による判定を廃止し、`sys.platform == "linux"` かつコンテナ実体ファイル（`/.dockerenv` または `/run/.containerenv`）が存在する場合のみコンテナ内と判定するよう厳格化。
+    - `_validate_and_configure_docker_container()` に `--network host`（ホストネットワーク共有モード）の検知・拒否を追加。
+  - **多言語開発環境への最適化とファイル保護ガードレールの強化 (`src/project/base.py`, `src/project/developer.py`)**:
+    - `get_structure` および `search_text` で `.git`, `node_modules`, `.venv`, `venv`, `target`, `.gradle`, `vendor`, `.next`, `.nuxt`, `.terraform`, `__pycache__` 等の管理・キャッシュ・依存関係ディレクトリを自動除外する `IGNORED_DIRS` を導入。
+    - `SECRET_FILE_PATTERNS` および `ALLOWED_ENV_FILES` を多言語・クラウド対応に拡充（`auth.json`, `master.key`, `*.jks`, `*.ppk`, `*credentials*.json`, `*service-account*.json`, `*.tfstate*`, `kubeconfig`, `.env.dist` 等）。
+    - 子プロセス環境変数スクラブ（`SCRUBBED_ENV_KEYS`）に `NPM_TOKEN`, `CARGO_REGISTRY_TOKEN`, `PYPI_TOKEN`, `COMPOSER_AUTH`, `GOOGLE_APPLICATION_CREDENTIALS` 等を追加。
+    - `.git/` 配下の直接読み書きブロック、既存 `.devcontainer/` 配下への別ファイル追加ブロック、保護対象ファイルを含むディレクトリごとの削除・移動ブロック（`_verify_directory_tree_writable`）、および `search_text` でのシンボリックリンク先検査を実装。
+  - **テストおよびドキュメント更新**:
+    - `tests/test_project_base.py`, `tests/test_project_developer.py`: トラストモード、厳格化されたコンテナ判定、`--network host` 拒否、多言語除外ディレクトリ・機密ファイル保護、ディレクトリ削除保護の単体テストを追加。
+    - `docs/design/design_sandbox_and_developer_mode.md`, `DEVELOPER_MODE_MANUAL.md`, `USER_MANUAL.md`: 新仕様に合わせて更新。
+- **2026年11月03日**: Gemio向けDockerコンテナ作成マニュアルの策定
+  - プロジェクトルートに `DOCKER_CONTAINER_MANUAL.md` を作成・配置。
+  - Gemioセーフティゲート（`--privileged`, `/var/run/docker.sock`, `--network host`, ルートマウントの禁止）と `--network none` 推奨設計を解説。
+  - 3つの立ち上げ手順（`docker run` ワンライナー、`Dockerfile`、`compose.yaml`）および多言語（Node.js/TypeScript, Go, Rust）サンドボックスの構築ポイント、UID/GID所有者対策、安全チェックリストを体系化。
+- **2026年11月04日**: コンテナ内起動モード（In-Container）におけるAPIキー保護の強化とDev Containerマニュアルの拡充
+  - **コンテナ内環境変数でのAPIキー設定の強制ブロック (`src/project/developer.py`)**:
+    - `_validate_in_container_security()` にて、`os.environ` または `/proc/1/environ` に `GEMINI_API_KEY` / `GOOGLE_API_KEY` が設定されている場合は `SandboxSecurityError` を送出して起動を拒否する検査を追加（AIによる環境変数や `/proc/*/environ` からのAPIキー読み取りを防止）。
+    - Linuxコンテナ内実行時に `prctl(PR_SET_DUMPABLE, 0)` を呼び出す `_disable_process_dumpable()` を実装し、子プロセスからの親プロセスメモリ（`/proc/$PPID/mem` 等）の覗き見をカーネルレベルで遮断。
+  - **起動時のセキュアAPIキー入力プロンプトと直接引き渡し (`src/cli/main.py`, `src/core/agent.py`)**:
+    - ホストOS起動時は従来通りホストのシステム環境変数を使用し、コンテナ内起動（`in_container`）時のみ起動時にAPIキー入力を求める `prompt_api_key_for_container()` を実装。
+    - ホストOS（Windows PowerShell / コマンドプロンプト / macOS / Linux / WSL）の別ターミナルから環境変数を表示・クリップボードへ直接コピーするコマンド案内パネルを表示し、`prompt_toolkit.prompt(..., is_password=True)` で `****` マスク表示のまま再確認なしでスムーズに起動できるように対応。
+    - `AIChatAgent.__init__` に `api_key: str | None = None` 引数を追加し、環境変数を介さず `genai.Client(api_key=api_key)` へ直接渡すよう拡張。
+  - **自動テストおよび各種マニュアルの拡充**:
+    - `tests/test_project_developer.py`, `tests/test_model_selection.py` に環境変数APIキー拒否・セキュア入力・明示的APIキー初期化の単体テストを追加。
+    - `DEVELOPER_MODE_MANUAL.md`, `USER_MANUAL.md`, `DOCKER_CONTAINER_MANUAL.md`, `docs/design/design_sandbox_and_developer_mode.md`, `docs/tech_docs/sandbox_security_responsibility_matrix.md` のDev Container関連手順・テンプレート・トラブルシューティングを拡充。
+- **2026年11月04日**: `gemio` パッケージ化（`src/gemio/` 構成への完全移行）、ライブラリ層とCLI層の分離、および不要な `import` 文の整理
+  - **`src/gemio/` パッケージ構成への移行と CLI エントリポイント整備**:
+    - 従来の `src/{core,project,cli}` から Python 標準の `src` レイアウトである `src/gemio/{core,project,cli}` へ完全移行し、全モジュールのインポートを `from gemio...` に統一。
+    - `src/gemio/__main__.py` および `pyproject.toml` の `[project.scripts]` (`gemio = "gemio.cli.main:main"`) を整備し、`python -m gemio ...` および `gemio` コマンドでの起動に対応。
+  - **ライブラリ層とアプリケーション（CLI）層の責務分離**:
+    - CLI側 (`main.py`) にあったモデル名・エイリアス解決ロジック (`DEFAULT_AI_MODEL_NAME`, `MODEL_PRESETS`, `MODEL_ALIASES`, `resolve_model_name`) を `src/gemio/core/agent.py` へ移動し、`AIChatAgent` 自体でもエイリアス解決をサポート。
+    - 標準システムインストラクション・開発者モード追加ルール・Web検索インストラクションおよび構築関数 (`build_system_instruction`) を `src/gemio/core/prompts.py` へ分離。
+    - `src/gemio/__init__.py` から CLI (`main`) のインポートを切り離し、`rich` や `prompt_toolkit` に依存せずコアライブラリとして軽量にインポートできるよう公開API (`__all__`) を整備。
+  - **不要な `import` 文の削除とテスト・ドキュメントの更新**:
+    - `src/gemio/cli/main.py`, `tests/test_model_selection.py`, `tests/test_project_base.py`, `tests/test_tools.py` の未使用 `import` 文を削除。
+    - `tests/test_agent_search.py` で環境変数にAPIキーがない環境でも単体テストが通るよう `genai.Client` のモックパッチを補完し、全59件の単体テスト合格を確認。
+    - 各種マニュアル (`USER_MANUAL.md`, `DEVELOPER_MODE_MANUAL.md`, `DEVELOPMENT_QA.md`, `DOCKER_CONTAINER_MANUAL.md`, `MANUAL_TEST_GUIDELINE.md`) のパス表記と起動コマンド (`python -m gemio`) を更新。
+- **2026年11月04日**: サンドボックス透明性・マウント保護状態診断機能（`/sandbox` / `/status`）の実装および機密検査対象の拡充
+  - **主要な開発環境の機密ファイル・機密ディレクトリ・管理領域定義の拡充 (`src/gemio/project/base.py`)**:
+    - `SECRET_FILE_PATTERNS` に `.envrc`, `.secrets`, `secrets.yaml`, `secrets.yml`, `secrets.json`, `.yarnrc.yml`, `.git-credentials`, `credentials.toml`, `*.tfvars`, `*.tfvars.json` を追加。
+    - 機密ディレクトリ `SECRET_DIR_NAMES`（`.ssh`, `.aws`, `.gcloud`, `.azure`, `.kube`, `.docker`, `.gnupg`）およびホスト干渉注意ディレクトリ `SENSITIVE_ENV_DIR_NAMES`（`.git`, `.devcontainer`, `.vscode`, `.idea`, `.github`, `.venv`, `venv`, `node_modules`, `vendor`, `.bundle`）を定義。
+  - **サンドボックス環境・マウント状態診断機能の実装 (`src/gemio/project/developer.py`, `src/gemio/cli/main.py`)**:
+    - `DeveloperProject.inspect_sandbox_status()`, `parse_proc_mountinfo()`, `classify_workspace_entry()` を実装。
+    - `docker inspect`、`/proc/self/mountinfo`、およびファイル属性（`stat` によるモード・UID/GID・サイズ・キャラクタデバイス `1:3` 判定）を統合し、ファイルの中身を読み取ることなく `.env` 等の `/dev/null` マスク状態（🟢）、`.git` 等の `ro` 保護状態（🟢）、未マスク機密ファイルの露出（🔴 危険警告）、仮想環境等の RW共有（🟡 注意警告）、およびコンテナの実行ユーザー・ネットワーク・リソース制限を診断。
+    - `--dev` 起動時の自動診断パネル表示、および対話中の `/sandbox`（エイリアス: `/status`, `/container`）コマンドを追加。
+    - `tests/test_project_developer.py` にマウント解析・エントリ分類・ステータス検査の単体テストを追加し、各種マニュアルを更新。
+- **2026年11月05日**: AI編集範囲・サンドボックス保護ガイドラインの策定およびDocker関連設定・マニュアルの最新仕様同期
+  - **保護基準ガイドラインの策定 (`SANDBOX_PROTECTION_GUIDELINE.md`)**:
+    - 「部屋の中（コード・テスト・ドキュメント）はAI、部屋の壁と鍵（Docker設定・Git・依存定義・機密情報）は人間が管理」という基本原則と、ファイルを4分類（① `rw` 作業領域、② `:ro` 保護領域、③ `.venv` 匿名ボリューム隔離領域、④ `/dev/null` 等による機密マスク領域）に分ける判断基準を策定してプロジェクトルートに配置。
+  - **Docker関連設定の強化 (`compose.yaml`, `Dockerfile`, `.dockerignore`)**:
+    - `compose.yaml`: `.git` / `.gitignore` / `requirements.txt` に加え、`Dockerfile` / `compose.yaml` / `.dockerignore` / `pyproject.toml` を `:ro`（読み取り専用）マウントで保護し、コンテナ内からの設定改ざんを防止。
+    - `Dockerfile`: `requirements.txt` のコピー時に `--chown=sandbox:sandbox` を外して `root:root` 所有のまま維持し、非rootユーザーからの書き換えを防止。
+    - `.dockerignore`: `src/gemio/project/base.py` の `SECRET_FILE_PATTERNS` および `SECRET_DIR_NAMES`（`.ssh`, `.aws`, `.gcloud`, `secrets.*`, `*.tfvars`, `memo` 等）をすべて網羅するように拡充。
+  - **コンテナ作成マニュアルの最新化 (`DOCKER_CONTAINER_MANUAL.md`)**:
+    - マニュアル内のコンテナ名（`gemio-sandbox`）、`compose.yaml`、`Dockerfile`、`.dockerignore`、`docker run` オプション、および `.devcontainer/devcontainer.json` のマウント定義を現行仕様に合わせて更新。
+- **2026年11月06日**: ユーザー対話・確認ツール（`ask_user`）の実装およびサーキットブレーカー連携
+  - **背景・目的**:
+    - 推論・作業ループの途中で仕様の曖昧さ、複数の実装方針の選択肢、操作承認拒否後の代替案、またはサンドボックス等の作業環境の不備に直面した際、AIが推測や無茶な手段で作業を強行せず、ユーザーに質問・相談して判断を仰げる双方向コミュニケーション機構を導入。
+  - **`Project` / `DeveloperProject` への `ask_user` 実装 (`src/gemio/project/base.py`, `src/gemio/project/developer.py`)**:
+    - `Project.__init__` および `DeveloperProject.__init__` に `ask_user_callback` 引数を追加し、`Project.ask_user(question, options, context)` メソッドを実装して `agent_tools()` に登録。
+    - 変更操作（`write_file` 等）が承認拒否された後に `ask_user` が呼び出された場合、ユーザーへの説明・相談が行われたとみなしてサーキットブレーカーの保留状態（`self._rejection_pending`）を `False` にリセットし、安全に作業を継続できるよう連携。
+    - プロンプト開始・終了時に承認拒否保留状態をリセットするライフサイクルハンドラ（`on_prompt_start`, `on_prompt_end`, `reset_rejection_state`）を実装。
+  - **`AIChatAgent` のプロンプトライフサイクルコールバック追加 (`src/gemio/core/agent.py`)**:
+    - `AIChatAgent.__init__` に `on_prompt_start` および `on_prompt_end` コールバック引数を追加し、`Project` の内部実装に依存しない疎結合な設計のまま各プロンプト境界での状態リセットを実現。
+  - **CLI UIハンドラおよびシステムインストラクションの更新 (`src/gemio/cli/main.py`, `src/gemio/core/prompts.py`)**:
+    - 質問・背景・選択肢（`[1]`〜`[N]`、`[0]` その他自由記述、直接テキスト入力、`[a]` 作業強制中止）をRichパネルで表示・受付する `cli_ask_user_callback` を実装。
+    - 標準システムインストラクションおよび開発者モード追加ルールに、仕様の曖昧さや作業環境不備時の `ask_user` による確認・相談ルールを追加。
+  - **自動テストおよび設計書 (`tests/test_agent_ask_user.py`, `docs/design/design_ask_user_tool.md`)**:
+    - `ask_user` のツール登録、コールバック呼び出し、標準入出力フォールバック、承認拒否後のサーキットブレーカー解除、Abort時のループ停止と履歴整合性、システムプロンプト検証の単体テストを追加し、機能設計書を作成・更新。
+- **2026年11月06日**: `tools.py` の不要な計算・型変換ツールの削除と日時取得ツールへの集約
+  - **背景・目的**: 未使用の四則演算・型変換ツールによる毎ターンの関数定義トークン消費と、整数計算限定の不自然なシステムプロンプト制約を解消。
+  - **変更内容 (`src/gemio/core/tools.py`, `src/gemio/core/__init__.py`, `src/gemio/__init__.py`, `src/gemio/cli/main.py`, `src/gemio/core/prompts.py`)**:
+    - `add`, `sub`, `mul`, `div`, `cast_int`, `length` を削除し、`get_current_date` および `get_current_time` のみに集約。
+    - `src/gemio/cli/main.py` のインポートエイリアス名を `calculation_tools` から `core_tools` に変更し、`DEFAULT_SYSTEM_INSTRUCTION` から計算ツール強制の記述を削除。
+    - `tests/test_tools.py` および `MANUAL_TEST_GUIDELINE.md` を日時取得ツールの検証に合わせて更新。
+- **2026年11月06日**: プロジェクト探索ツール（`get_structure` / `find_files` / `search_text`）の階層・上限保護および見落とし防止機構の実装
+  - **背景・目的**:
+    - 大量ファイルを含むディレクトリによるコンテキスト圧迫とディスクI/O負荷を防止するとともに、単純な件数打ち切りによって後半のフォルダやファイルが認識されず放置される問題を構造的に解消。
+  - **探索ツールの改修・新規追加と機密保護強化 (`src/gemio/project/base.py`)**:
+    - 共通可視性フィルタ（`_is_safe_visible_entry`, `_count_safe_descendants`）を導入し、除外・機密ディレクトリの事前枝刈り、機密ファイル（`.env`, 秘密鍵等）の非表示化、およびプロジェクト外シンボリックリンクやディレクトリループの遮断を徹底。
+    - `get_structure(target_dir=".", max_depth=3, include_dirs=True)`: 幅優先探索（浅い階層優先）により上位フォルダの消失を防ぎ、`max_depth` 到達フォルダの配下件数表示（`※配下に未表示 N 件`）および最大件数（200件）超過時の未表示フォルダ内訳サマリ（`[省略通知]`）を実装。
+    - `find_files(pattern="*", target_dir=".")`: ワイルドカード・部分一致・パスパターンに対応するファイル名検索ツールを新規実装して `agent_tools()` に登録。上限（200件）超過時の未表示フォルダ内訳サマリを実装。
+    - `search_text(pattern, target_dir=".")`: `target_dir` による対象フォルダ絞り込みと、上限（100件）超過時の未表示フォルダ内訳（`notice`）付与を実装。
+  - **システムインストラクション・テスト・設計書 (`src/gemio/core/prompts.py`, `tests/test_project_base.py`, `docs/design/design_project_exploration_tools.md`)**:
+    - システムインストラクションに `get_structure`・`find_files`・`search_text` の使い分けと、未表示件数や `[省略通知]` がある場合の `target_dir` による段階的探索ルールを追記。
+    - 機能設計書 `docs/design/design_project_exploration_tools.md` の作成および `tests/test_project_base.py` への単体テスト追加を実施。
+- **2026年11月06日**: エディットモード（`--edit` / `/edit`）の導入および3段階承認モード制御・拒否後変更遮断の実装
+  - **背景・目的**:
+    - ファイルの作成・編集・リネーム・コピーは自動承認して作業テンポを向上させつつ、取り返しのつきにくいファイルの削除（`delete_path`）とサンドボックス内コマンド実行（`run_sandbox_command`）は人間の都度確認（Human-in-the-loop）を維持する「エディットモード」を導入。
+  - **3段階承認モードとサーキットブレーカー強化 (`src/gemio/project/base.py`, `src/gemio/project/developer.py`)**:
+    - 承認モード定数（`APPROVAL_MODE_NORMAL`, `APPROVAL_MODE_EDIT`, `APPROVAL_MODE_TRUST`）を導入し、`Project` / `DeveloperProject` に `approval_mode` 引数・プロパティ、`edit_mode` プロパティ、`set_approval_mode()`、`set_edit_mode()` を実装（既存の `require_approval` / `trust_mode` との後方互換性を維持）。
+    - `delete_path` および `run_sandbox_command` で `force_confirm_in_edit=True` を指定し、エディットモードでも必ず承認要求を行うよう制御。
+    - `_check_circuit_breaker()` を全変更系ツール（`write_file`, `search_and_replace_file`, `rename_path`, `copy_file`, `create_directory`, `delete_path`, `run_sandbox_command`）の冒頭および自動承認判定の前に配置し、削除やコマンド実行が拒否された直後にAIが無断でファイル書き換え等を試みた場合も確実に遮断（`AgentExecutionAborted`）。
+  - **CLI・UI対応とテスト・ドキュメント (`src/gemio/cli/main.py`, `tests/`, `docs/design/design_edit_mode.md`)**:
+    - CLI引数 `--edit` および対話中コマンド `/edit`（`/edit on`, `/edit off`）を追加し、同意確認プロンプトなしで通知メッセージを表示して即座に切り替える仕様を実装。
+    - プロンプトヘッダー（`format_prompt_header`）、ウェルカムバナー、ヘルプパネル、ステータス表示にエディットモード（黄色表示）を追加。
+    - 機能設計書 `docs/design/design_edit_mode.md` の作成、各種マニュアルおよび `tests/test_project_base.py`, `tests/test_project_developer.py`, `tests/test_cli_prompt.py` への単体テスト追加を実施。
+- **2026年11月07日**: CLIモジュールの構造整理（`ui.py` 分離 ＆ `GemioCLI` クラス化）
+  - **背景・目的**:
+    - 機能追加により約760行（うち `main()` 関数が約440行）に肥大化していた `src/gemio/cli/main.py` の可読性・保守性・単体テスト容易性を向上させるため、UI表示層とセッション制御層を分離するハイブリッド構成へリファクタリングを実施。
+  - **UI表示・対話プロンプト層の分離 (`src/gemio/cli/ui.py`)**:
+    - セッション状態を持たない画面描画・フォーマット関数（`format_prompt_header`, `print_welcome_banner`, `print_help_panel`, `print_sandbox_status_panel`, `print_search_help_panel`, `print_search_response_panel`）および対話プロンプト関数（`request_trust_mode_consent`, `prompt_api_key_for_container`, `prompt_approval_choice`, `prompt_iteration_limit_continue`, `prompt_ask_user_response`, `prompt_model_selection`）を `src/gemio/cli/ui.py` に集約。
+  - **セッション管理クラス `GemioCLI` の導入 (`src/gemio/cli/main.py`, `src/gemio/cli/__init__.py`)**:
+    - コマンドライン引数解析を `parse_args()`、プロンプトセッション生成を `create_prompt_session()` として独立。
+    - セッション状態（`project`, `agent`, `current_model`, `active_status` 等）を管理する `GemioCLI` クラスを導入し、スピナー一時停止を共通化する `_pause_status()` コンテキストマネージャ、3種のコールバックメソッド、および各スラッシュコマンドハンドラ（`handle_edit_command`, `handle_trust_command`, `handle_model_command`, `handle_search_command`, `dispatch_input`）へ整理。
+    - `main()` 関数を数行のエントリポイントにスリム化しつつ、既存テストや外部参照向けの再エクスポートによる後方互換性を維持。
+  - **設計書およびテスト (`docs/design/design_cli_architecture_refactoring.md`, `tests/test_cli_prompt.py`)**:
+    - 設計書 `docs/design/design_cli_architecture_refactoring.md` を作成し、`tests/test_cli_prompt.py` に `parse_args` および `GemioCLI` のコマンドディスパッチ・コールバック動作の単体テストを追加（全75件合格）。
+- **2026年11月07日**: 累積トークン量確認（`/tokens`）および対話セッションリセット（`/clear`）機能の実装
+  - **背景・目的**:
+    - 対話セッション進行に伴うコンテキスト肥大化やAPIトークン消費量をリアルタイムに可視化し、ユーザーが適切なタイミングでCLIを再起動せずに新しい対話セッションへ切り替えられるように対応。
+  - **`AIChatAgent` のトークン集計・セッションリセット機構 (`src/gemio/core/agent.py`)**:
+    - `_generate_content_with_retry` 実行時に `response.usage_metadata` を自動解析する `_record_usage_metadata` を実装し、直近のコンテキスト量（`last_prompt_tokens`）とセッション累積トークン量（`cumulative_prompt_tokens`, `cumulative_candidates_tokens`, `cumulative_thoughts_tokens`, `cumulative_cached_tokens`, `cumulative_tool_use_tokens`, `cumulative_total_tokens`、およびAPI呼び出し回数）を2軸で追跡。
+    - `get_token_usage()`, `reset_token_usage()`, および作業前提資料の維持・破棄を選択可能な `reset_session(clear_materials=False)` を実装。
+  - **CLI表示・スラッシュコマンド対応 (`src/gemio/cli/ui.py`, `src/gemio/cli/main.py`)**:
+    - プロンプトヘッダー（`format_prompt_header`）にトークンサマリ行（`tokens: context ... / cumulative ... (calls: ...)`）を追加し、コンテキスト量のしきい値（`50,000` / `150,000` tokens）に応じた3段階カラー（緑・黄・赤）表示を実装。
+    - `/tokens`（エイリアス: `/usage`, `/token`）コマンドによるコンテキスト健全性診断＆累積トークン内訳テーブル表示（`print_token_usage_panel`）を実装。
+    - `/clear`（エイリアス: `/reset`, `/new`、オプション: `--all` / `-a`）コマンドによる会話履歴・トークン統計・拒否保留状態の即時リセット機能（`print_session_reset_panel`）を実装。
+  - **設計書・マニュアルおよびテスト (`docs/design/design_token_usage_and_session_reset.md`, `USER_MANUAL.md`, `tests/test_agent_token_usage.py`, `tests/test_cli_prompt.py`)**:
+    - 機能設計書 `docs/design/design_token_usage_and_session_reset.md` の作成、`USER_MANUAL.md` の更新、および単体テストの追加を実施（全80件合格）。
+- **2026年11月07日**: `ask_user` パネルのMarkdownレンダリング対応・`[a]` 表示修正、および `/sandbox` 診断テーブルにおける「作業対象 (`rw`)」の行色分け・ソート順改善
+  - **`ask_user` パネルの描画改善 (`src/gemio/cli/ui.py`, `tests/test_agent_ask_user.py`, `docs/design/design_ask_user_tool.md`)**:
+    - `prompt_ask_user_response` にて、`[a]` が `rich` のコンソールマークアップタグとして誤認・削除されていた問題を `\\[a]` エスケープにより解消。
+    - `context`・`question`・`options`（`Table.grid` + `Markdown`）に `rich.markdown.Markdown` レンダリングを適用し、AIが生成した太字やインラインコード等のMarkdown記法が適切に整形表示されるよう改善。
+  - **Dockerサンドボックス診断（`/sandbox`）の視認性向上 (`src/gemio/project/developer.py`, `src/gemio/cli/ui.py`, `tests/test_project_developer.py`, 各種マニュアル)**:
+    - `classify_workspace_entry` における通常RW領域のステータス表記を `🔵 作業対象 (rw)` に更新し、`inspect_sandbox_status` のソート順で `⚪ 読取専用 (ro)` と `🔵 作業対象 (rw)` が上下に分離してグループ化されるよう改善。
+    - `print_sandbox_status_panel` にて、`作業対象 (rw)` の行全体をシアン（`style="cyan"`）でハイライトし、`読取専用 (ro)` の行を `dim` スタイルで落ち着かせることで、AIが編集可能な作業領域をひと目で識別できるよう改善。
+- **2026年11月07日**: プロンプト入力欄クリア機能（`[Esc]` + `[Backspace]`）の実装
+  - **キーバインド・クリア処理 (`src/gemio/cli/main.py`)**:
+    - 入力バッファをUndo可能な状態（`save_to_undo_stack()`）で全消去する `clear_prompt_buffer(buffer)` を実装。
+    - `create_prompt_session()` に `("escape", "backspace")` キーバインドを登録。
+  - **UI案内・テスト・ドキュメント更新 (`src/gemio/cli/ui.py`, `tests/test_cli_prompt.py`, 各種設計書・マニュアル)**:
+    - プロンプトヘッダー（`format_prompt_header`）、ウェルカムバナー（`print_welcome_banner`）、およびヘルプパネル（`print_help_panel`）に `[Esc]` + `[Backspace]` によるクリア操作案内を追加。
+    - `tests/test_cli_prompt.py` に複数行テキストの全消去・Undo復元およびキーバインド登録の単体テストを追加（全82件合格）。
+- **2026年11月08日**: プロジェクト公開準備に伴う `.gitignore` 拡充、`compose.yaml` 整理、および `*.egg-info` の自動走査除外・書き込み保護ガードレール追加
+  - **`.gitignore` の機密・ビルドキャッシュ設定強化**:
+    - `.dockerignore` および `src/gemio/project/base.py`（`SECRET_DIR_NAMES`, `SECRET_FILE_PATTERNS`, `ALLOWED_ENV_FILES`）に準拠し、機密ディレクトリ・環境変数・秘密鍵・クラウド認証情報・ビルドキャッシュの除外設定を拡充。
+  - **`compose.yaml` のマウント設定整理と `*.egg-info` 保護 (`compose.yaml`, `src/gemio/project/base.py`, `src/gemio/project/developer.py`)**:
+    - クローン直後の環境で未生成ディレクトリが `:ro` マウントされて `pip install -e .` の妨げになるのを防ぐため、`compose.yaml` から `./src/gemio.egg-info` の個別マウント指定を削除し、`SANDBOX_PROTECTION_GUIDELINE.md` および `DOCKER_CONTAINER_MANUAL.md` の標準構成に統一。
+    - AIが誤ってパッケージ生成メタデータ領域（`*.egg-info`）を検索・編集しないよう、`src/gemio/project/base.py` に `IGNORED_DIR_PATTERNS = ("*.egg-info",)` による探索・検索からの自動除外および `_check_fatal_security_path` による直接変更・削除ブロックを追加し、関連設計書・マニュアル・単体テストを更新。
+- **2026年11月09日**: `LICENSE`（Apache License 2.0）の配置およびマニュアル類の `manuals/` フォルダ整理・連番化
+  - **ライセンスファイルの配置**:
+    - プロジェクトルートに Apache License Version 2.0 の `LICENSE` ファイルを配置。
+  - **マニュアル類の `manuals/` 集約・連番化と `PROJECT_SUMMARY.md` の移設**:
+    - ルート直下にあった各種マニュアル・ガイドラインを `manuals/` ディレクトリへ集約し、最初に読むべき順番に沿って `01_USER_MANUAL.md`、`02_DEVELOPER_MODE_MANUAL.md`、`03_DOCKER_CONTAINER_MANUAL.md`、`04_SANDBOX_PROTECTION_GUIDELINE.md`、`05_DEVELOPMENT_QA.md`、`06_MANUAL_TEST_GUIDELINE.md` にリネーム。
+    - 各マニュアルの読む順番と概要を案内する目次として `manuals/README.md` を新規作成。
+    - 開発履歴サマリーである `PROJECT_SUMMARY.md` を `docs/PROJECT_SUMMARY.md` へ移設し、関連ドキュメントの参照パスを更新。
+  - **プロジェクトルート `README.md` の作成および `pyproject.toml` のメタデータ整理**:
+    - プロトタイプ版である旨の明記、Gemioの設計思想と主な特徴、クイックスタート、操作・コマンド一覧、`manuals/` および `docs/` へのナビゲーション、コントリビューションと個人主導の運営スタンス、開発支援（準備中）、および Apache License 2.0 表記を記載した `README.md` を作成。
+    - `pyproject.toml` に `readme`, `license`, `authors`, `keywords`, `classifiers`, `[project.urls]` を追加し、未使用の `[tool.ai_agent]` セクションを削除。
+  - **シークレットスキャン誤検知防止のためのテスト・ドキュメント内ダミーキー文字列の置換**:
+    - `tests/test_model_selection.py`, `tests/test_project_developer.py`, `tests/test_agent_search.py`, および `docs/tech_docs/dev_containers_reference.md` 内のダミーAPIキー文字列を `"DUMMY_..."` / `"<YOUR_...>"` 形式に統一し、構文チェック（`syntax_check`）の正常通過を確認。
+- **2026年11月10日**: コンテナセキュリティの3段階境界基準の統一と、両モード共通のAPIキー・機密環境変数検査（値非保持・強い警告通知）の実装
+  - **起動拒否と警告の3段階境界の統一 (`src/gemio/project/developer.py`, `docs/design/design_sandbox_and_developer_mode.md`)**:
+    - 起動拒否（`SandboxSecurityError`）を「コンテナ脱獄・ホストOS乗っ取りが可能な状態（`--privileged`, `docker.sock`, `--network host`, ルートマウント, コンテナ未稼働）」に統一し、`in_container` モードでの環境変数APIキーによる起動拒否を廃止。
+    - コンテナ内への機密情報露出（各種APIキー・トークン環境変数の設定、未マスクの `.env`・秘密鍵等）を `in_container` / `host_docker` 両モード共通で「🔴 強い警告（`danger`）」として診断・通知する設計へ統一。
+  - **値を読み取らない機密環境変数キー名検査とメモリ保護 (`src/gemio/project/developer.py`, `src/gemio/cli/main.py`, `src/gemio/cli/ui.py`)**:
+    - `SCRUBBED_ENV_KEYS` および `SCRUBBED_ENV_SUFFIXES` に基づく共通判定関数 `is_sensitive_env_key(key)` を実装。
+    - `_sanitize_inspect_info()` により `docker inspect` の `Config.Env` の値部分を即座に `<redacted>` へマスクして平文値のメモリ保持を防止するとともに、`_probe_container_via_exec()` および `_detect_container_sensitive_env_keys()` で値を一切読み取らず非空の機密環境変数名のみを検出。
+    - `inspect_sandbox_status()` および `print_sandbox_status_panel()` にて、検出された機密環境変数名（`sensitive_env_keys`）を【1. コンテナ基本設定】および【3. セキュリティ・マウント診断アラート】（`level: "danger"`）に表示。
+    - `in_container` モード起動時、`os.environ` に `GEMINI_API_KEY` / `GOOGLE_API_KEY` が未設定の場合のみセキュア入力プロンプト（`prompt_api_key_for_container()`）を呼び出し、設定済みの場合はプロンプトをスキップして強い警告で通知するよう `GemioCLI._init_project_and_agent` を更新。
+  - **単体テストの更新・追加 (`tests/test_project_developer.py`, `tests/test_cli_prompt.py`)**:
+    - `in_container` および `host_docker` 両モードでの機密環境変数キー名検出・値の非保持（マスク検証）・`danger` 警告出力・UIパネル描画、およびCLI起動時のAPIキー入力プロンプト分岐を検証する単体テストを追加し、構文チェック（`syntax_check`）の正常通過を確認。
+- **2026年11月11日**: `run_sandbox_command` の承認パネルにおけるコマンド全文表示および意図説明（`description`）引数の追加
+  - **コマンド全文表示と `description` 引数の実装 (`src/gemio/project/developer.py`, `src/gemio/core/prompts.py`)**:
+    - `DeveloperProject.run_sandbox_command` にコマンドの意図・目的（100字以内）を受け取る `description: str = ""` 引数を追加。未指定時は `(説明なし)` と表示し、150文字を超える場合は先頭150文字＋`...` に切り詰めて `説明: ...` として承認メッセージに含めるよう実装。
+    - 承認要求メッセージ（`action_desc`）において、`summarize_text_for_display` によるコマンド文字列のトリミングと前後の括弧装飾を廃止し、Python検証スクリプト等の長文・複数行コマンドも省略せず全文を表示するよう改修。
+    - `DEVELOPER_MODE_INSTRUCTION_ADDON` に、`run_sandbox_command` 呼び出し時は `description` 引数へコマンドの意図に関する短い説明（100字以内）を指定するルールを追記。
+  - **単体テストおよびドキュメント更新 (`tests/test_project_developer.py`, `docs/design/design_sandbox_and_developer_mode.md`, `manuals/02_DEVELOPER_MODE_MANUAL.md`)**:
+    - 300文字・5行超のコマンド全文表示（省略なし・括弧なし）、`description` の表示・未指定時 `(説明なし)` 表示・150文字切り詰めを検証する単体テストを追加（全85件合格）。
+- **2026年11月11日**: `gemio.cli` における `prompt_toolkit` および `rich` 依存の `ui.py` への完全集約リファクタリング
+  - **UI依存の完全集約 (`src/gemio/cli/ui.py`, `src/gemio/cli/main.py`, `src/gemio/cli/__init__.py`)**:
+    - `main.py` に残っていた `prompt_toolkit` 関連処理（`clear_prompt_buffer`, `create_prompt_session`, およびマルチライン入力受付 `prompt_user_input`）をすべて `ui.py` に移設。
+    - `main.py` に直接記述されていた `rich` 関連処理（思考中・検索中スピナー生成、動作モードラベル生成、エージェントログパネル、エディット/トラスト/モデル切替通知パネル、エラーパネル、各種メッセージ出力）をすべて `ui.py` の関数に抽出し、`main.py` から `prompt_toolkit` と `rich` のインポートを完全に排除。
+  - **単体テストおよび設計書更新 (`tests/test_cli_prompt.py`, `tests/test_model_selection.py`, `docs/design/design_cli_architecture_refactoring.md`)**:
+    - `main.py` が `prompt_toolkit` / `rich` を直接インポートしていないことをAST解析で検証する単体テストを追加し、全86件のテスト合格を確認。
+- **2026年11月12日**: Textual移行および `AIChatAgent` 分離（通常対話 / 検索対話）を見据えた `src/gemio/cli/ui/` パッケージ構造へのリファクタリングとテストスイート全面刷新
+  - **`ui.py` の `src/gemio/cli/ui/` サブパッケージ化（4層分離とレガシー互換レイヤの撤去）**:
+    - `src/gemio/cli/ui/base.py`: UIバックエンド抽象基底クラス `GemioUI` およびログ種別定数 `AgentLogCategory`（`user`, `assistant`, `tool`, `warning`, `abort`, `search`）を定義。通常対話表示系と検索対話表示系のインターフェースを明確に分離。
+    - `src/gemio/cli/ui/renderables.py`: `console.print` を呼ばずに Rich の `Panel`・`Table`・`Group` 等を生成して返す純粋関数群（`build_*_panel`）、ヘッダー/ラベル整形、およびログ種別判定関数 `classify_agent_log()` を実装し、Textual移行時にウィジェット描画でそのまま再利用可能に設計。
+    - `src/gemio/cli/ui/prompts.py`: `prompt_toolkit` および `rich.prompt` による対話入力・選択プロンプト処理を分離し、動的モジュール参照ハック（`_get_ui_attr` / `_resolve_console`）や旧エイリアスを廃して明示的な `console` 引数受け渡しに統一。
+    - `src/gemio/cli/ui/rich_ui.py`: 現行のコンソールUIを担う `RichConsoleUI(GemioUI)` クラスを実装。重複していたトップレベルの `print_*` ラッパー関数群を全廃し、`self.console` の保持と `thinking_status()`・`search_status()`・`pause_status()` によるスピナー管理・自動一時停止制御をクラス内部へ完全にカプセル化。
+    - `src/gemio/cli/ui/__init__.py`: グローバル `console` や外部ライブラリクラスの不要な露出を廃止し、クリーンな公開APIへ整理。
+  - **`GemioCLI` の `GemioUI` 依存性注入（DI）対応 (`src/gemio/cli/main.py`, `src/gemio/cli/__init__.py`)**:
+    - `GemioCLI.__init__` に `ui_backend: GemioUI | None = None` 引数を追加し、スピナー管理プロパティ（旧 `active_status` / `_pause_status`）を除去して全UI操作を `self.ui` 経由に統一。
+  - **テストスイートの全面再設計と設計書作成 (`tests/`, `docs/design/design_ui_package_refactoring_for_textual.md`)**:
+    - 複数層が混在していた旧テストファイルを廃止し、現行パッケージ構造と今後の拡張に直結する9モジュール構成（`test_core_tools_and_prompts.py`, `test_core_agent_chat.py`, `test_core_agent_search.py`, `test_project_base.py`, `test_project_developer.py`, `test_cli_main.py`, `test_ui_renderables.py`, `test_ui_prompts.py`, `test_ui_rich.py`）へ刷新（全69テスト合格）。
+- **2026年11月12日**: `src/gemio/core/` パッケージ全面リファクタリング（`ChatAgent` / `SearchAgent` 分離、`context/`・`skills/`・`tools/` サブパッケージ化、および動的ツールセット基盤の実装）
+  - **基盤分離と通常対話・Web検索の完全分割 (`exceptions.py`, `models.py`, `client.py`, `agent.py`, `search.py`)**:
+    - 旧 `AIChatAgent` を撤廃し、共通通信・リトライ基盤 `GenAIClient` とソース別（`chat` / `search` / `compaction`）集計を行う `TokenUsageTracker`、ローカル操作専任の `ChatAgent`、および Google Search Grounding 専任の `SearchAgent`（構造化 `SearchResult` 返却）へ完全分離。
+    - 共通例外 `AgentExecutionAborted` やモデル定数・`AgentLogCategory` を外部SDK非依存の `exceptions.py` / `models.py` へ切り出し、`project`・`cli/ui` 層への不要なSDK依存伝播を解消。
+  - **コンテキスト・作業前提資料管理の高度化と環境情報秘匿 (`src/gemio/core/context/`)**:
+    - `history.py`: ターン単位の `ChatTurn` / `ChatHistory` を導入し、Function Calling ペアやロール規約を壊さない安全な `rewind()`、コピー・再表示用の範囲抽出および Markdown 整形を実装。
+    - `materials.py`: 物理ファイルパス属性を一切持たず、SHA-256ハッシュ（`content_hash` / `source_hash`）で重複排除・差し替え更新を行う `MaterialStore` を実装。AI側からは検索結果（`WEB_SEARCH`）のみを追加可能とし、検索結果以外の資料追加（`add_user_document`）や個別削除（`remove`）はユーザー操作専用に分離。
+    - `compactor.py` / `session.py`: 古い対話ターン群を構造化要約へ圧縮する `ContextCompactor` と、履歴・前提資料を統合管理する `ChatSession` を実装。
+  - **Skills 段階的開示および実験的動的ツールセット機能の実装 (`prompts.py`, `skills/`, `tools/`, `project/`, `cli/`)**:
+    - 読み込み先をパッケージ内標準ディレクトリとプロジェクト直下 `.gemio/{skills,tools}` の固定2箇所のみに限定し、物理パス非露出・例外サニタイズと `Project` での `.gemio/` 書き込み保護ガードレールを実装。
+    - `SkillLoader` / `SkillManager`（`activate_skill` メタツール）および `SystemPromptComposer`、`ToolRegistry` / `StaticToolProvider`、実験的機能 `DynamicToolsetProvider`（`request_tools` メタツール、`--dynamic-tools` オプション）を実装し、`ChatAgent` の毎イテレーション動的評価ループへ統合。
+  - **設計書作成およびテスト拡充 (`docs/design/design_core_package_refactoring.md`, `tests/`)**:
+    - 詳細設計書を作成し、新構造を網羅する単体テスト（全80件合格）を整備。
+- **2026年11月14日**: エンドユーザー向けマニュアルの拡充（Skills/Tools専用マニュアル新設）およびコントリビューター向けリファレンスマニュアル（2分冊）の策定
+  - **既存エンドユーザー向けマニュアル（`01`〜`05`）の更新・拡充 (`manuals/`)**:
+    - `01_USER_MANUAL.md`: 目次・章構成の完全同期、`ask_user` 双方向確認パネル・連続実行上限の操作説明、`.gemio/`・`*.egg-info/` の保護仕様、`--dynamic-tools` 起動オプション、および拡張機能への導線を追加。
+    - `02_DEVELOPER_MODE_MANUAL.md` / `03_DOCKER_CONTAINER_MANUAL.md` / `04_SANDBOX_PROTECTION_GUIDELINE.md`: `.gemio/` 管理領域の書き込み保護ガードレールおよび Docker `:ro` マウント保護基準を反映。
+    - `05_DEVELOPMENT_QA.md`: 3段階承認モード（エディットモード含む）の使い分け、`.gemio/skills/` による規約適用、および `/tokens`・`/clear` によるコンテキスト管理のQ&Aを追加。
+  - **Skills & カスタムツール専用マニュアルの新規作成 (`manuals/06_SKILLS_AND_TOOLS_MANUAL.md`)**:
+    - `.gemio/skills/*/SKILL.md` の段階的開示仕様とフロントマターテンプレート、`.gemio/tools/*.py` の3種の定義スタイルとセキュリティ注意点、および `--dynamic-tools`（動的ツールセット）と標準ツールセット一覧を解説する独立マニュアルを作成。
+  - **コントリビューター向けリファレンスマニュアル（2ファイル分割）の新規作成と手動テスト手順の整理 (`manuals/07`〜`09`)**:
+    - `07_ARCHITECTURE_REFERENCE.md`: 3層レイヤー単方向依存ルール、全モジュール責務マップ、`core` / `project` / `cli`（4層UI）の詳細内部仕様、CLI接続状態マトリクス、主要処理シーケンス、および公開ライブラリAPIリファレンスを策定。
+    - `08_CONTRIBUTING_GUIDE.md`: 開発環境セットアップ、アーキテクチャ制約、5つの機能拡張レシピ、セキュリティ定数変更時の同期チェックリスト、全12単体テストモジュールの責務・モック鉄則、およびドキュメント運用規約を策定。
+    - 旧 `06_MANUAL_TEST_GUIDELINE.md` を `09_MANUAL_TEST_GUIDELINE.md` へ繰り下げて新機能の手動テストケースを拡充し、`manuals/README.md` およびルート `README.md` のナビゲーションをエンドユーザー編（`01`〜`06`）・コントリビューター編（`07`〜`09`）の2部構成へ更新。
