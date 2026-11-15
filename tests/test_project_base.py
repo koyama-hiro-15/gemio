@@ -370,3 +370,21 @@ def test_ask_user_tool_callback_stdio_fallback_and_circuit_breaker_reset(tmp_pat
     with patch("builtins.input", side_effect=["a"]):
         with pytest.raises(AgentExecutionAborted):
             proj_stdio.ask_user("形式は？", options=opts)
+
+
+def test_project_get_system_instruction_contains_project_rules_only(temp_project):
+    """
+    Project.get_system_instruction() が ask_user・ファイル変更・探索ルールを含み、
+    DeveloperProject や CLI 固有の指示（run_sandbox_command, /search）を含まないこと
+    """
+    from gemio.project import PROJECT_SYSTEM_INSTRUCTION
+
+    inst = temp_project.get_system_instruction()
+    assert inst == PROJECT_SYSTEM_INSTRUCTION.strip()
+    assert "【ユーザーへの確認・質問（ask_userツール）に関するルール】" in inst
+    assert "【コード・ファイル変更に関するルール】" in inst
+    assert "syntax_check" in inst
+    assert "【コード参照に関するルール】" in inst
+    assert "get_structure" in inst and "[省略通知]" in inst
+    assert "run_sandbox_command" not in inst
+    assert "/search" not in inst

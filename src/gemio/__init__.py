@@ -16,7 +16,6 @@ from gemio.core import (
     DEFAULT_COMPACTION_INSTRUCTION,
     DEFAULT_SEARCH_INSTRUCTION,
     DEFAULT_SYSTEM_INSTRUCTION,
-    DEVELOPER_MODE_INSTRUCTION_ADDON,
     DynamicToolsetProvider,
     GenAIClient,
     MODEL_ALIASES,
@@ -38,7 +37,6 @@ from gemio.core import (
     ToolSpec,
     Toolset,
     agent_tools,
-    build_system_instruction,
     compute_sha256,
     extract_tool_summary,
     get_builtin_toolset,
@@ -64,8 +62,15 @@ from gemio.project.developer import (
     scrub_environment,
     truncate_command_output,
 )
+from gemio.project.prompts import (
+    DEVELOPER_PROJECT_INSTRUCTION,
+    PROJECT_SYSTEM_INSTRUCTION,
+)
+
+__version__ = "0.1.1"
 
 __all__ = [
+    "__version__",
     "ChatAgent",
     "ChatTurnResult",
     "SearchAgent",
@@ -91,9 +96,7 @@ __all__ = [
     "resolve_model_name",
     "get_now_time_text",
     "DEFAULT_SYSTEM_INSTRUCTION",
-    "DEVELOPER_MODE_INSTRUCTION_ADDON",
     "DEFAULT_SEARCH_INSTRUCTION",
-    "build_system_instruction",
     "SystemPromptComposer",
     "BUILTIN_SKILLS_DIR",
     "SKILL_FILENAME",
@@ -113,6 +116,8 @@ __all__ = [
     "load_project_toolsets",
     "Project",
     "DeveloperProject",
+    "PROJECT_SYSTEM_INSTRUCTION",
+    "DEVELOPER_PROJECT_INSTRUCTION",
     "APPROVAL_MODE_NORMAL",
     "APPROVAL_MODE_EDIT",
     "APPROVAL_MODE_TRUST",

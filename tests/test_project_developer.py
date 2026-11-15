@@ -682,3 +682,22 @@ def test_run_sandbox_command_approval_displays_full_command_and_description(tmp_
             dev_proj.run_sandbox_command("pytest", description=desc_160)
             expected_truncated = ("い" * 150) + "..."
             assert f"説明: {expected_truncated}\n" in called_actions[-1]
+
+
+def test_developer_project_get_system_instruction_includes_sandbox_addon(tmp_path):
+    """
+    DeveloperProject.get_system_instruction() が基本の Project ルールに加えて
+    開発者モード（サンドボックス実行）ルールを継承・結合して返すこと
+    """
+    from gemio.project import DEVELOPER_PROJECT_INSTRUCTION, PROJECT_SYSTEM_INSTRUCTION
+
+    with patch.object(DeveloperProject, "_is_running_in_container", return_value=True), \
+         patch.object(DeveloperProject, "_validate_in_container_security"):
+        dev_proj = DeveloperProject(str(tmp_path), require_approval=True)
+        inst = dev_proj.get_system_instruction()
+
+    assert PROJECT_SYSTEM_INSTRUCTION.strip() in inst
+    assert DEVELOPER_PROJECT_INSTRUCTION.strip() in inst
+    assert "run_sandbox_command" in inst
+    assert ".gemio/" in inst
+    assert "/search" not in inst

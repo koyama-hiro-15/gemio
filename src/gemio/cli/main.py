@@ -3,6 +3,7 @@ import os
 import sys
 from pathlib import Path
 
+from gemio.cli.prompts import CLI_SEARCH_GUIDANCE_INSTRUCTION
 from gemio.cli.ui import GemioUI, RichConsoleUI
 from gemio.core.agent import ChatAgent
 from gemio.core.client import GenAIClient
@@ -206,9 +207,12 @@ class GemioCLI:
         self.tool_provider.register_extra_tools(self.skill_manager.get_meta_tools())
 
         self.prompt_composer = SystemPromptComposer(
-            dev_mode=bool(self.args.dev),
             tool_provider=self.tool_provider,
             skill_manager=self.skill_manager,
+            extra_sections=[
+                self.project.get_system_instruction(),
+                CLI_SEARCH_GUIDANCE_INSTRUCTION,
+            ],
         )
 
         self.ai_client = GenAIClient(

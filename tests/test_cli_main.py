@@ -386,3 +386,32 @@ def test_gemio_cli_dynamic_tools_and_project_skills_reset_on_clear(tmp_path):
         cli.dispatch_input("/clear")
         assert cli.skill_manager.active_skill_names == []
         assert "get_structure" not in [f.__name__ for f in cli.chat_agent.tools]
+
+
+def test_gemio_cli_composes_core_project_and_cli_instructions(tmp_path):
+    """
+    GemioCLI が core 基本指示・Project/DeveloperProject 指示・CLI Web検索コマンド案内を
+    SystemPromptComposer で適切に合成すること
+    """
+    from gemio.cli.prompts import CLI_SEARCH_GUIDANCE_INSTRUCTION
+
+    mock_ui_std = _create_mock_ui()
+    with patch("google.genai.Client"):
+        cli_std = GemioCLI(parse_args([str(tmp_path)]), ui_backend=mock_ui_std)
+        std_inst = cli_std.chat_agent.instruction
+        assert "【外部情報および不確実な事実に関するルール】" in std_inst
+        assert "【ユーザーへの確認・質問（ask_userツール）に関するルール】" in std_inst
+        assert CLI_SEARCH_GUIDANCE_INSTRUCTION.strip() in std_inst
+        assert "/search" in std_inst
+        assert "run_sandbox_command" not in std_inst
+
+    mock_ui_dev = _create_mock_ui()
+    with patch.object(DeveloperProject, "_is_running_in_container", return_value=True), \
+         patch.object(DeveloperProject, "_validate_in_container_security"), \
+         patch.dict("os.environ", {"GEMINI_API_KEY": "DUMMY_ENV_KEY"}, clear=True), \
+         patch("google.genai.Client"):
+        cli_dev = GemioCLI(parse_args([str(tmp_path), "--dev"]), ui_backend=mock_ui_dev)
+        dev_inst = cli_dev.chat_agent.instruction
+        assert "【ユーザーへの確認・質問（ask_userツール）に関するルール】" in dev_inst
+        assert "run_sandbox_command" in dev_inst
+        assert CLI_SEARCH_GUIDANCE_INSTRUCTION.strip() in dev_inst

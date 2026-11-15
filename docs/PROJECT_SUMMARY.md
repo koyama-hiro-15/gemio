@@ -380,3 +380,18 @@
     - `07_ARCHITECTURE_REFERENCE.md`: 3層レイヤー単方向依存ルール、全モジュール責務マップ、`core` / `project` / `cli`（4層UI）の詳細内部仕様、CLI接続状態マトリクス、主要処理シーケンス、および公開ライブラリAPIリファレンスを策定。
     - `08_CONTRIBUTING_GUIDE.md`: 開発環境セットアップ、アーキテクチャ制約、5つの機能拡張レシピ、セキュリティ定数変更時の同期チェックリスト、全12単体テストモジュールの責務・モック鉄則、およびドキュメント運用規約を策定。
     - 旧 `06_MANUAL_TEST_GUIDELINE.md` を `09_MANUAL_TEST_GUIDELINE.md` へ繰り下げて新機能の手動テストケースを拡充し、`manuals/README.md` およびルート `README.md` のナビゲーションをエンドユーザー編（`01`〜`06`）・コントリビューター編（`07`〜`09`）の2部構成へ更新。
+- **2026年11月16日**: Gemioリポジトリのオープンソース公開（`v0.1.0`）およびバージョン番号管理運用の開始
+  - **プロトタイプ版の一般公開**:
+    - 本日（2026年11月16日）付けで、Gemio リポジトリをプロトタイプ版（**`v0.1.0`**）としてオープンソース公開。
+  - **バージョン番号管理の導入**:
+    - 以降の変更についてセマンティックバージョニングに準拠したバージョン番号管理を開始し、`pyproject.toml`、`src/gemio/__init__.py`（`__version__`）、`README.md`、および本サマリーにてバージョン番号を同期・記録する運用を策定。
+- **2026年11月16日**: システムインストラクションの3層パッケージ責務分離（`core` ➔ `project` / `cli`）およびパッチバージョン更新（**`v0.1.1`**）
+  - **`gemio.core` の純粋汎用化と上位層依存の完全排除 (`src/gemio/core/prompts.py`, `src/gemio/core/__init__.py`)**:
+    - `DEFAULT_SYSTEM_INSTRUCTION` から `Project` 固有ツール（`ask_user`, `syntax_check`, `get_structure` 等）および `CLI` 固有コマンド（`/search`）への言及を分離し、コマンド名非依存の「外部情報および不確実な事実に関するルール」と「作業前提資料の取り扱いに関するルール」のみに整理。
+    - `DEVELOPER_MODE_INSTRUCTION_ADDON`、`build_system_instruction`、および `SystemPromptComposer` の `dev_mode` 引数を後方互換なしで撤去し、`base_instruction` ➔ `extra_sections` ➔ `tool_catalog` ➔ `skills` の順で動的に合成する設計へ整理。
+  - **`gemio.project` および `gemio.cli` へのプロンプト移設 (`src/gemio/project/prompts.py`, `src/gemio/cli/prompts.py`)**:
+    - `src/gemio/project/prompts.py` を新設し、`PROJECT_SYSTEM_INSTRUCTION` および `DEVELOPER_PROJECT_INSTRUCTION` を定義。`Project.get_system_instruction()` と `DeveloperProject.get_system_instruction()` による継承ポリモーフィズムで動作モードに応じたルールを提供するよう実装。
+    - `src/gemio/cli/prompts.py` を新設し、`/search`・`/s` コマンドの案内を行う `CLI_SEARCH_GUIDANCE_INSTRUCTION` を定義して `GemioCLI` から `SystemPromptComposer(extra_sections=[...])` へ注入するよう更新。
+  - **バージョン更新（`v0.1.0` ➔ `v0.1.1`）とテスト・マニュアル同期**:
+    - 機能変化を伴わない内部設計整理のため、パッチバージョンを1つ上げて **`v0.1.1`** に更新（`pyproject.toml`, `src/gemio/__init__.py` の `__version__`, `README.md`）。
+    - `tests/test_core_tools_and_prompts.py`, `tests/test_project_base.py`, `tests/test_project_developer.py`, `tests/test_cli_main.py` の単体テストおよび `manuals/07_ARCHITECTURE_REFERENCE.md`, `08_CONTRIBUTING_GUIDE.md` を最新仕様に更新。

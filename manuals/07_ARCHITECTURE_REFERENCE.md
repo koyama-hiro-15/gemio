@@ -1,7 +1,7 @@
 # 🏗️ Gemio アーキテクチャ & 内部仕様リファレンスマニュアル
 
 **作成日:** 2026年11月14日  
-**最終更新日:** 2026年11月14日  
+**最終更新日:** 2026年11月16日  
 **ステータス:** 運用中  
 **対象システム:** Gemio 全パッケージ (`src/gemio/core/`, `src/gemio/project/`, `src/gemio/cli/`, `src/gemio/__init__.py`)  
 
@@ -181,10 +181,12 @@ gemio/
 │   │       └── loader.py                # load_project_toolsets (.gemio/tools/*.py ローダー)
 │   ├── project/                         # 【プロジェクト・サンドボックス層】
 │   │   ├── __init__.py
+│   │   ├── prompts.py                   # Project / DeveloperProject 固有のシステムインストラクション定数
 │   │   ├── base.py                      # Project (ファイル操作・BFS探索・保護定数・3段階承認・CB)
 │   │   └── developer.py                 # DeveloperProject (Docker検証・診断プローブ・コマンド実行)
 │   └── cli/                             # 【CLI・UI層】
 │       ├── __init__.py
+│       ├── prompts.py                   # CLI固有のシステムインストラクション定数 (/search 案内)
 │       ├── main.py                      # parse_args, GemioCLI, main
 │       └── ui/                          # 4層分離UIサブパッケージ
 │           ├── __init__.py
@@ -204,7 +206,7 @@ gemio/
 | **Core** | `core/exceptions.py` | `AgentExecutionAborted` | Abort選択・サーキットブレーカー発動時の作業ループ強制遮断例外 |
 | **Core** | `core/models.py` | `MODEL_PRESETS`, `resolve_model_name`, `AgentLogCategory` | モデルプリセット・エイリアス解決、コンテキスト警告閾値、ログ種別定数 |
 | **Core** | `core/client.py` | `GenAIClient`, `TokenUsageTracker` | `google-genai` クライアント管理、503/429等の指数バックオフリトライ、ソース別トークン集計 |
-| **Core** | `core/prompts.py` | `SystemPromptComposer`, `build_system_instruction` | 基本/開発者ルール・動的ツールカタログ・Skillsカタログ/手順の動的合成 |
+| **Core** | `core/prompts.py` | `SystemPromptComposer`, `DEFAULT_SYSTEM_INSTRUCTION` | 汎用基本ルール・追加ルールセクション・動的ツールカタログ・Skills手順の動的合成 |
 | **Core** | `core/agent.py` | `ChatAgent`, `ChatTurnResult`, `emit_agent_log` | 通常対話・Function Callingループ、エラー回復、上限継続確認、ターン記録 |
 | **Core** | `core/search.py` | `SearchAgent`, `SearchResult` | 隔離コンテキストでのGoogle Search Grounding実行、出典抽出・重複排除 |
 | **Core** | `core/context/history.py` | `ChatTurn`, `ChatHistory` | ターン単位の対話履歴保持、安全な `rewind()`、Markdown抽出、要約展開 |
@@ -217,8 +219,10 @@ gemio/
 | **Core** | `core/tools/registry.py` | `ToolRegistry`, `Toolset`, `ToolSpec`, `StaticToolProvider` | ツール定義の一元管理、Docstring先頭概要抽出、安全な名前解決・実行 |
 | **Core** | `core/tools/dynamic.py` | `DynamicToolsetProvider` | `[Experimental]` `request_tools` によるツールセット/個別ツールのオンデマンド有効化 |
 | **Core** | `core/tools/loader.py` | `load_project_toolsets` | `.gemio/tools/*.py` からの拡張ツール読み込みとパス秘匿サニタイズ |
+| **Project** | `project/prompts.py` | `PROJECT_SYSTEM_INSTRUCTION`, `DEVELOPER_PROJECT_INSTRUCTION` | `Project` および `DeveloperProject` 固有のツール・承認・探索・サンドボックス規約定数 |
 | **Project** | `project/base.py` | `Project`, `summarize_text_for_display` | パス境界・機密保護、ファイル操作・BFS探索ツール、3段階承認、サーキットブレーカー、`ask_user` |
 | **Project** | `project/developer.py` | `DeveloperProject`, `SandboxSecurityError`, `scrub_environment` | コンテナ判定、脱獄構成ブロック、環境変数スクラブ、`/sandbox` 診断、`run_sandbox_command` |
+| **CLI** | `cli/prompts.py` | `CLI_SEARCH_GUIDANCE_INSTRUCTION` | CLIにおける `/search`（`/s`）Web検索コマンド誘導ルール定数 |
 | **CLI** | `cli/main.py` | `GemioCLI`, `parse_args`, `main` | CLI起動処理、コンポーネント結線、スラッシュコマンド振り分け、REPLループ |
 | **CLI/UI** | `cli/ui/base.py` | `GemioUI` | コンソールUIと将来のTextual TUIを抽象化するUIバックエンド契約（ABC） |
 | **CLI/UI** | `cli/ui/renderables.py` | `build_*_panel`, `format_prompt_header`, `classify_agent_log` | `console.print` を呼ばない純粋な Rich Renderable 生成関数群 |
@@ -285,13 +289,12 @@ gemio/
 
 ### 3.4 プロンプト合成・Skills・ツール管理 (`prompts.py`, `skills/`, `tools/`)
 
-* **`SystemPromptComposer` の合成順序**:
-  1. `base_instruction`（`DEFAULT_SYSTEM_INSTRUCTION`）
-  2. `DEVELOPER_MODE_INSTRUCTION_ADDON`（`dev_mode=True` の場合のみ）
+* **`SystemPromptComposer` の合成順序（レイヤー責務分離）**:
+  1. `base_instruction`（`DEFAULT_SYSTEM_INSTRUCTION`：上位層非依存の汎用基本原則・外部情報の推測禁止・作業前提資料ルール）
+  2. `extra_sections`（任意の固定文字列または `Callable[[], str]`。CLIでは `project.get_system_instruction()` と `CLI_SEARCH_GUIDANCE_INSTRUCTION` を注入）
   3. `tool_provider.get_catalog_prompt()`（`DynamicToolsetProvider` 使用時のみ動的ツールカタログを出力）
   4. `skill_manager.build_catalog_prompt()`（登録スキルが1件以上ある場合のみ一覧を出力）
   5. `skill_manager.build_active_skills_prompt()`（有効化中のスキルの Markdown 本文を出力）
-  6. `extra_sections`（任意の固定文字列または `Callable[[], str]`）
 * **`SkillLoader` & `SkillManager` (`core/skills/`)**:
   * 走査対象は `src/gemio/core/skills/builtin/*/SKILL.md` と `<project_root>/.gemio/skills/*/SKILL.md` の固定2箇所（深さ1階層のみ、上限256KB、シンボリックリンク不可）。同名スキルはプロジェクト側で上書きされます。
   * 外部YAMLライブラリに依存しない軽量パーサ `parse_skill_markdown()` でフロントマターを解析し、本文はクロージャ `_body_loader` 内に閉じ込めて `activate()` 時まで遅延ロードします。
@@ -446,9 +449,10 @@ User入力 ➔ GemioCLI.run_chat_prompt()
 ### 7.1 `gemio` トップレベル公開シンボル一覧
 `src/gemio/__init__.py` は、`cli`（`rich` や `prompt_toolkit`）をインポートせず、外部のPythonアプリケーションや自動化スクリプトから軽量にインポートできるよう設計されています。
 
+* **パッケージメタ情報**: `__version__`
 * **エージェント & クライアント**: `GenAIClient`, `TokenUsageTracker`, `ChatAgent`, `ChatTurnResult`, `SearchAgent`, `SearchResult`
 * **コンテキスト & セッション**: `ChatSession`, `ChatHistory`, `ChatTurn`, `MaterialStore`, `ReferenceMaterial`, `MaterialKind`, `ContextCompactor`, `CompactionResult`, `compute_sha256`
-* **プロンプト & モデル設定**: `SystemPromptComposer`, `build_system_instruction`, `DEFAULT_SYSTEM_INSTRUCTION`, `DEVELOPER_MODE_INSTRUCTION_ADDON`, `DEFAULT_SEARCH_INSTRUCTION`, `DEFAULT_COMPACTION_INSTRUCTION`, `DEFAULT_AI_MODEL_NAME`, `MODEL_PRESETS`, `MODEL_ALIASES`, `resolve_model_name`, `AgentLogCategory`
+* **プロンプト & モデル設定**: `SystemPromptComposer`, `DEFAULT_SYSTEM_INSTRUCTION`, `DEFAULT_SEARCH_INSTRUCTION`, `DEFAULT_COMPACTION_INSTRUCTION`, `PROJECT_SYSTEM_INSTRUCTION`, `DEVELOPER_PROJECT_INSTRUCTION`, `DEFAULT_AI_MODEL_NAME`, `MODEL_PRESETS`, `MODEL_ALIASES`, `resolve_model_name`, `AgentLogCategory`
 * **Skills & ツール基盤**: `SkillLoader`, `SkillManager`, `SkillSpec`, `parse_skill_markdown`, `ToolRegistry`, `Toolset`, `ToolSpec`, `ToolProvider`, `StaticToolProvider`, `DynamicToolsetProvider`, `get_builtin_toolset`, `load_project_toolsets`, `agent_tools`, `get_current_date`, `get_current_time`
 * **プロジェクト & セキュリティ**: `Project`, `DeveloperProject`, `APPROVAL_MODE_NORMAL`, `APPROVAL_MODE_EDIT`, `APPROVAL_MODE_TRUST`, `AgentExecutionAborted`, `SandboxSecurityError`, `scrub_environment`, `is_sensitive_env_key`, `truncate_command_output`, `summarize_text_for_display`
 
@@ -486,7 +490,10 @@ for ts in project.agent_toolsets():
 registry.register_toolset(get_builtin_toolset())
 
 provider = StaticToolProvider(registry=registry)
-composer = SystemPromptComposer(dev_mode=False, tool_provider=provider)
+composer = SystemPromptComposer(
+    tool_provider=provider,
+    extra_sections=[project.get_system_instruction()],
+)
 
 # 3. クライアント・セッション・エージェントの生成と実行
 client = GenAIClient(model_name="flash")
@@ -518,3 +525,4 @@ finally:
 | 日付 | 更新者 | ステータス | 変更内容の要約 |
 | :--- | :--- | :--- | :--- |
 | 2026-11-14 | AI Agent | 運用中 | 初版作成。3層レイヤー構造、全モジュール責務マップ、`core` / `project` / `cli` の詳細仕様、CLI接続状態マトリクス、主要シーケンス、公開ライブラリAPIを体系化。 |
+| 2026-11-16 | AI Agent | 運用中 | システムインストラクションの3層責務分離（`project/prompts.py`, `cli/prompts.py` の新設、`Project.get_system_instruction()` の導入、`core` からの `dev_mode` 廃止）および `__version__`（`v0.1.1`）公開APIを反映。 |

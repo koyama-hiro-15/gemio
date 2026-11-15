@@ -33,9 +33,7 @@ from gemio.core.models import (
 from gemio.core.prompts import (
     DEFAULT_SEARCH_INSTRUCTION,
     DEFAULT_SYSTEM_INSTRUCTION,
-    DEVELOPER_MODE_INSTRUCTION_ADDON,
     SystemPromptComposer,
-    build_system_instruction,
 )
 from gemio.core.search import (
     SearchAgent,
@@ -93,9 +91,7 @@ __all__ = [
     "resolve_model_name",
     "get_now_time_text",
     "DEFAULT_SYSTEM_INSTRUCTION",
-    "DEVELOPER_MODE_INSTRUCTION_ADDON",
     "DEFAULT_SEARCH_INSTRUCTION",
-    "build_system_instruction",
     "SystemPromptComposer",
     "BUILTIN_SKILLS_DIR",
     "SKILL_FILENAME",

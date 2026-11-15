@@ -19,6 +19,7 @@ from gemio.project.base import (
     SENSITIVE_ENV_DIR_NAMES,
     Project,
 )
+from gemio.project.prompts import DEVELOPER_PROJECT_INSTRUCTION
 
 
 class SandboxSecurityError(PermissionError):
@@ -1406,3 +1407,7 @@ class DeveloperProject(Project):
             always_active=False,
         )
         return base_toolsets + [sandbox_toolset]
+
+    def get_system_instruction(self) -> str:
+        """基本の Project ルールに加え、開発者モード（サンドボックス実行）のシステムインストラクションを返します。"""
+        return f"{super().get_system_instruction()}\n\n{DEVELOPER_PROJECT_INSTRUCTION.strip()}"

@@ -22,10 +22,16 @@ from gemio.project.developer import (
     scrub_environment,
     truncate_command_output,
 )
+from gemio.project.prompts import (
+    DEVELOPER_PROJECT_INSTRUCTION,
+    PROJECT_SYSTEM_INSTRUCTION,
+)
 
 __all__ = [
     "Project",
     "DeveloperProject",
+    "PROJECT_SYSTEM_INSTRUCTION",
+    "DEVELOPER_PROJECT_INSTRUCTION",
     "APPROVAL_MODE_NORMAL",
     "APPROVAL_MODE_EDIT",
     "APPROVAL_MODE_TRUST",

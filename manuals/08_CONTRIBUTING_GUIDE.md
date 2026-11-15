@@ -1,7 +1,7 @@
 # 🛠️ Gemio コントリビューション & 拡張開発ガイド
 
 **作成日:** 2026年11月14日  
-**最終更新日:** 2026年11月14日  
+**最終更新日:** 2026年11月16日  
 **ステータス:** 運用中  
 **対象システム:** Gemio リポジトリ全体 (`src/gemio/`, `tests/`, `manuals/`, `docs/`, `Dockerfile`, `compose.yaml`)  
 
@@ -178,6 +178,7 @@ pytest  # ホスト側でも docker exec gemio-sandbox pytest でも実行可能
 | **子プロセス除去環境変数の追加**<br>(`SCRUBBED_ENV_KEYS`, `SCRUBBED_ENV_SUFFIXES`) | 1. `src/gemio/project/developer.py`<br>2. `tests/test_project_developer.py`<br>3. `manuals/02_DEVELOPER_MODE_MANUAL.md` |
 | **AIモデルプリセット・エイリアスの追加・変更**<br>(`DEFAULT_AI_MODEL_NAME`, `MODEL_PRESETS`, `MODEL_ALIASES`) | 1. `src/gemio/core/models.py`<br>2. `src/gemio/cli/ui/renderables.py`（`build_help_panel` 内の例示）<br>3. `tests/test_core_client_and_models.py`, `tests/test_cli_main.py` |
 | **公開コアAPI（新クラス・定数）の追加** | 1. 各サブパッケージの `__init__.py`<br>2. `src/gemio/core/__init__.py` および `src/gemio/__init__.py` (`__all__`) |
+| **バージョン番号の更新（セマンティックバージョニング）** | 1. `pyproject.toml` (`version`)<br>2. `src/gemio/__init__.py` (`__version__`)<br>3. `README.md`（ステータスバッジ・プロトタイプ版表記）<br>4. `tests/test_core_tools_and_prompts.py`（バージョン整合性テスト）<br>5. `docs/PROJECT_SUMMARY.md`（更新履歴へのバージョン記載） |
 
 ---
 
@@ -246,8 +247,9 @@ pytest  # ホスト側でも docker exec gemio-sandbox pytest でも実行可能
 
 ---
 
-### 6.3 `docs/PROJECT_SUMMARY.md` への追記ルール
-機能追加・リファクタリング・ドキュメント整備などの作業を完了した際は、[`docs/PROJECT_SUMMARY.md`](../docs/PROJECT_SUMMARY.md) の既存履歴を書き換えたり削除したりせず、**必ずファイル末尾の「更新履歴」セクションに作業日付（`YYYY年MM月DD日`）付きで要約を追記**してください。
+### 6.3 `docs/PROJECT_SUMMARY.md` への追記ルールとバージョン管理
+* 2026年11月16日のリポジトリ公開（初版 `v0.1.0`）以降、変更規模に応じてセマンティックバージョニング（機能追加はマイナー、バグ修正・機能変化のない内部リファクタリング等はパッチ）でバージョン番号を更新・管理します。
+* 機能追加・リファクタリング・ドキュメント整備などの作業を完了した際は、[`docs/PROJECT_SUMMARY.md`](../docs/PROJECT_SUMMARY.md) の既存履歴を書き換えたり削除したりせず、**必ずファイル末尾の「更新履歴」セクションに作業日付（`YYYY年MM月DD日`）および対応バージョン番号付きで要約を追記**してください。
 
 ---
 
@@ -256,3 +258,4 @@ pytest  # ホスト側でも docker exec gemio-sandbox pytest でも実行可能
 | 日付 | 更新者 | ステータス | 変更内容の要約 |
 | :--- | :--- | :--- | :--- |
 | 2026-11-14 | AI Agent | 運用中 | 初版作成。開発環境構築、アーキテクチャ遵守規約、5つの機能拡張レシピ、セキュリティ同期チェックリスト、全12単体テストモジュールの構成・鉄則、およびドキュメント運用ルールを策定。 |
+| 2026-11-16 | AI Agent | 運用中 | リポジトリ公開に伴うバージョン番号管理・同期チェックリストおよび `PROJECT_SUMMARY.md` へのバージョン記録ルールを追加。 |

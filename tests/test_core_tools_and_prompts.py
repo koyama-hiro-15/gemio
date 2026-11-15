@@ -1,12 +1,13 @@
+from pathlib import Path
 import re
+import tomllib
 from unittest.mock import patch
 
+import gemio
 from gemio.core.prompts import (
     DEFAULT_SEARCH_INSTRUCTION,
     DEFAULT_SYSTEM_INSTRUCTION,
-    DEVELOPER_MODE_INSTRUCTION_ADDON,
     SystemPromptComposer,
-    build_system_instruction,
 )
 from gemio.core.tools import (
     StaticToolProvider,
@@ -139,24 +140,33 @@ def test_project_and_developer_project_agent_toolsets_match_agent_tools(tmp_path
         assert any(ts.name == "sandbox" for ts in dev_toolsets)
 
 
-def test_build_system_instruction_and_dynamic_prompt_composer():
+def test_core_system_instructions_isolation_and_dynamic_prompt_composer():
     """
-    build_system_instruction および SystemPromptComposer（動的カタログ・Skills・動的セクション合成）が
-    正しくインストラクション文字列を構築すること
+    1. gemio.__version__ が定義されていること
+    2. core の DEFAULT_SYSTEM_INSTRUCTION が汎用ルール（外部情報の推測禁止・作業前提資料）のみを持ち、
+       上位レイヤー（project / cli）固有のツール名やコマンド名を含まないこと
+    3. SystemPromptComposer が base -> extra_sections -> tool_catalog -> skills の順で動的に合成すること
     """
-    std_inst = build_system_instruction(dev_mode=False)
-    assert std_inst == DEFAULT_SYSTEM_INSTRUCTION
-    assert "【ユーザーへの確認・質問（ask_userツール）に関するルール】" in std_inst
-    assert "【作業前提資料の取り扱いに関するルール】" in std_inst
-    assert "run_sandbox_command" not in std_inst
+    pyproject_path = Path(__file__).resolve().parent.parent / "pyproject.toml"
+    pyproject_data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    assert re.match(r"^\d+\.\d+\.\d+$", gemio.__version__)
+    assert gemio.__version__ == "0.1.1"
+    assert pyproject_data["project"]["version"] == gemio.__version__
 
-    dev_inst = build_system_instruction(dev_mode=True)
-    assert DEVELOPER_MODE_INSTRUCTION_ADDON in dev_inst
-    assert ".gemio/" in dev_inst
+    assert "【外部情報および不確実な事実に関するルール】" in DEFAULT_SYSTEM_INSTRUCTION
+    assert "【作業前提資料の取り扱いに関するルール】" in DEFAULT_SYSTEM_INSTRUCTION
+    for leaked_term in (
+        "ask_user",
+        "syntax_check",
+        "get_structure",
+        "run_sandbox_command",
+        "/search",
+    ):
+        assert leaked_term not in DEFAULT_SYSTEM_INSTRUCTION
 
     assert "Google検索ツールを活用し" in DEFAULT_SEARCH_INSTRUCTION
 
-    # SystemPromptComposer の動的評価テスト
+    # SystemPromptComposer の合成順序・動的評価テスト（dev_mode 引数は存在しない）
     class DummyDynamicProvider(ToolProvider):
         def get_active_tools(self):
             return []
@@ -178,22 +188,26 @@ def test_build_system_instruction_and_dynamic_prompt_composer():
     state = {"phase": "init"}
     composer = SystemPromptComposer(
         base_instruction="ベース指示",
-        dev_mode=True,
         tool_provider=DummyDynamicProvider(),
         skill_manager=skill_mgr,
-        extra_sections=[lambda: f"現在フェーズ: {state['phase']}"],
+        extra_sections=[
+            "追加固定ルール",
+            lambda: f"現在フェーズ: {state['phase']}",
+        ],
     )
+    assert not hasattr(composer, "dev_mode")
 
     composed_1 = composer.compose()
-    assert "ベース指示" in composed_1
-    assert "run_sandbox_command" in composed_1
-    assert "【ツールカタログ】" in composed_1
-    assert "【利用可能スキル】" in composed_1
-    assert "現在フェーズ: init" in composed_1
+    idx_base = composed_1.index("ベース指示")
+    idx_fixed = composed_1.index("追加固定ルール")
+    idx_dyn = composed_1.index("現在フェーズ: init")
+    idx_tool = composed_1.index("【ツールカタログ】")
+    idx_skill = composed_1.index("【利用可能スキル】")
+    assert idx_base < idx_fixed < idx_dyn < idx_tool < idx_skill
 
     # 状態変化が次回の compose() に即時反映されること
     skill_mgr.active_body = "【有効スキル手順】\npytest を必ず実行すること"
     state["phase"] = "active"
     composed_2 = composer.compose()
-    assert "【有効スキル手順】" in composed_2
     assert "現在フェーズ: active" in composed_2
+    assert composed_2.index("【利用可能スキル】") < composed_2.index("【有効スキル手順】")

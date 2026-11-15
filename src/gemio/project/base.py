@@ -9,6 +9,7 @@ from typing import Callable
 
 from gemio.core.exceptions import AgentExecutionAborted
 from gemio.core.tools.registry import Toolset
+from gemio.project.prompts import PROJECT_SYSTEM_INSTRUCTION
 
 
 # 読み取り・書き込みともに完全拒否する機密ファイルパターン（多言語・クラウド対応）
@@ -1359,3 +1360,7 @@ class Project:
                 always_active=False,
             ),
         ]
+
+    def get_system_instruction(self) -> str:
+        """Project の提供ツールおよび承認・探索仕様に対応するシステムインストラクションを返します。"""
+        return PROJECT_SYSTEM_INSTRUCTION.strip()

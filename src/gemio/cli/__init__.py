@@ -1,4 +1,5 @@
 from gemio.cli.main import GemioCLI, main, parse_args
+from gemio.cli.prompts import CLI_SEARCH_GUIDANCE_INSTRUCTION
 from gemio.cli.ui import (
     AgentLogCategory,
     GemioUI,
@@ -11,6 +12,7 @@ from gemio.cli.ui import (
 
 __all__ = [
     "AgentLogCategory",
+    "CLI_SEARCH_GUIDANCE_INSTRUCTION",
     "GemioCLI",
     "GemioUI",
     "RichConsoleUI",
