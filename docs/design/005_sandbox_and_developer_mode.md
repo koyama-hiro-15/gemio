@@ -1,12 +1,14 @@
-# サンドボックス実行環境・トラストモードおよび開発者モード アーキテクチャ設計書
+# #005 サンドボックス実行環境・トラストモードおよび開発者モード アーキテクチャ設計書
 
 **作成日:** 2026年11月02日  
-**最終更新日:** 2026年11月11日  
-**ステータス:** 実装完了  
+**最終更新日:** 2026年11月17日  
+**ステータス:** 一部更新（#009, #012, #013 参照）  
 **対象システム:** `src/gemio/project/base.py`, `src/gemio/project/developer.py`, `src/gemio/core/agent.py`, `src/gemio/core/prompts.py`, `src/gemio/cli/main.py`, `src/gemio/cli/ui.py`  
 
 ### 【要約】
 Gemioを非開発者の日常業務から多言語ソフトウェア開発まで安全・汎用的に対応させるため、「基本モード（`Project`）」と「開発者モード（`DeveloperProject`）」の2層実行環境と、プロジェクトの信頼度に応じた「通常承認モード」と「トラストモード（`--trust` / `/trust`）」の2軸アーキテクチャを定義します。また、ホストOS上でのシェル誤実行の完全防止、コンテナセキュリティの3段階境界基準（起動拒否 / 強い警告 / 注意警告）、`in_container` と `host_docker` 両モードにおける値を読み取らないAPIキー・機密環境変数検査と強い警告通知、セキュア入力・メモリ保護機構、多言語環境向けの除外・機密保護ルール、および承認拒否を無視した暴走を阻止するサーキットブレーカー機構を規定します。
+
+> **💡 現行仕様に関する注記:** `Project` / `DeveloperProject` の2層構成、コンテナ境界検証、3段階セキュリティ境界基準、値非保持の機密環境変数キー名検査、`run_sandbox_command`、およびサーキットブレーカーの設計は現在も有効です。なお、承認モードは [`009_edit_mode.md`](./009_edit_mode.md) で3段階（エディットモード追加）へ拡張され、`.gemio/` 保護追加および `core` / `cli.ui` の内部クラス構成は [`012_ui_package_refactoring_for_textual.md`](./012_ui_package_refactoring_for_textual.md)・[`013_core_package_refactoring.md`](./013_core_package_refactoring.md) で更新されています。現行仕様は [`manuals/07_ARCHITECTURE_REFERENCE.md`](../../manuals/07_ARCHITECTURE_REFERENCE.md) を参照してください。
 
 ---
 
@@ -247,3 +249,4 @@ Gemioを非開発者の日常業務から多言語ソフトウェア開発まで
 | 2026-11-08 | AI Agent | 実装完了 | パッケージ生成メタデータ領域（`*.egg-info`）の自動走査除外（`IGNORED_DIR_PATTERNS`）および書き込み・削除保護ガードレールを反映、対象システム表記を `src/gemio/...` に更新。 |
 | 2026-11-10 | AI Agent | 実装完了 | コンテナセキュリティの3段階境界基準（🚫 起動拒否 / 🔴 強い警告 / 🟡 注意警告）を策定・実装。`in_container` と `host_docker` 両モードで一貫して各種APIキー・機密環境変数を検査（値は読み取らずキー名のみ検出）し、起動拒否ではなく強い警告（`danger`）で通知する仕様へ更新。 |
 | 2026-11-11 | AI Agent | 実装完了 | `run_sandbox_command` にコマンドの意図を説明する `description` 引数（未指定時は `(説明なし)` 表示、150文字上限切り詰め）を追加し、承認要求パネル上でコマンドを省略せず全文表示（前後の括弧削除）する仕様へ更新。 |
+| 2026-11-17 | AI Agent | 一部更新（#009, #012, #013 参照） | 設計書の3桁連番管理導入に伴い `005_sandbox_and_developer_mode.md` へリネームし、後続設計書（3段階承認・UI/Core刷新）への案内注記を追加。 |

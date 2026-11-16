@@ -3,7 +3,8 @@
 
 本ドキュメントでは、これまでに実施したAIコーディングエージェントプロジェクトの構成整理、自動テスト導入、機能拡張、およびバグ修正などの主な作業内容を要約して記録します。
 
-> **⚠️ 注意:** サマリに内容を追記する際は、必ず末尾に追記し、作業日付を付加すること。
+> **⚠️ 注意:** サマリに内容を追記する際は、必ず末尾に追記し、作業日付を付加すること。  
+> **💡 参照ガイド:** 以下の第1章〜第4章はプロジェクト初期構築時（2026年10月時点）の記録です。現行のパッケージ構成・最新アーキテクチャ仕様については **[`manuals/07_ARCHITECTURE_REFERENCE.md`](../manuals/07_ARCHITECTURE_REFERENCE.md)** を、各機能設計書の一覧は **[`docs/README.md`](./README.md)** を参照してください。
 
 ---
 
@@ -395,3 +396,11 @@
   - **バージョン更新（`v0.1.0` ➔ `v0.1.1`）とテスト・マニュアル同期**:
     - 機能変化を伴わない内部設計整理のため、パッチバージョンを1つ上げて **`v0.1.1`** に更新（`pyproject.toml`, `src/gemio/__init__.py` の `__version__`, `README.md`）。
     - `tests/test_core_tools_and_prompts.py`, `tests/test_project_base.py`, `tests/test_project_developer.py`, `tests/test_cli_main.py` の単体テストおよび `manuals/07_ARCHITECTURE_REFERENCE.md`, `08_CONTRIBUTING_GUIDE.md` を最新仕様に更新。
+- **2026年11月17日**: 設計書管理方式のADR型3桁連番・ステータス運用への移行および `docs/README.md` の新設（`v0.1.1`）
+  - **ドキュメント運用ルールの刷新 (`docs/DOCUMENTATION_RULE.md`, `manuals/08_CONTRIBUTING_GUIDE.md`)**:
+    - 現行アーキテクチャ仕様の唯一の正（Single Source of Truth）を `manuals/07_ARCHITECTURE_REFERENCE.md` と定め、`docs/design/` は設計意図・経緯（Why）を残すADR型の3桁連番ログ（`NNN_*.md`）として分離管理する方針を策定。
+    - ライフサイクルを表すステータス区分（`実装完了（現行）` / `一部更新（#NNN 参照）` / `置換済み（Superseded by #NNN）`）と、後続リファクタリング時の軽量メンテナンス手順（本文書き直し不要・ヘッダー注記方式）を規定。
+  - **既存設計書13ファイルの連番リネームと最新ステータス反映 (`docs/design/001_` 〜 `013_`)**:
+    - `docs/design/` 配下の全13設計書を作成順の `001_web_search.md` 〜 `013_core_package_refactoring.md` へリネームし、現行コードとの整合に応じたステータス更新、後続設計書・現行仕様書への案内注記追加、および設計書間の相互リンク更新を実施。
+  - **設計書インデックスの新設とナビゲーション整備 (`docs/README.md`, `README.md`, `manuals/README.md`, `docs/PROJECT_SUMMARY.md`)**:
+    - 全設計書・技術資料のステータス一覧とレイヤー別逆引きを備えた `docs/README.md` を新設し、ルート `README.md`・`manuals/README.md` からの導線および本サマリー冒頭の初期構築章に関する参照ガイド注記を追加。

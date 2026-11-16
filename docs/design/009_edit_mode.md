@@ -1,12 +1,14 @@
-# エディットモード（Edit Mode）機能設計書
+# #009 エディットモード（Edit Mode）機能設計書
 
 **作成日:** 2026年11月06日  
-**最終更新日:** 2026年11月06日  
-**ステータス:** 実装完了  
-**対象システム:** `src/gemio/project/base.py`, `src/gemio/project/developer.py`, `src/gemio/cli/main.py`, `tests/`  
+**最終更新日:** 2026年11月17日  
+**ステータス:** 実装完了（現行）  
+**対象システム:** `src/gemio/project/base.py`, `src/gemio/project/developer.py`, `src/gemio/cli/main.py`, `src/gemio/cli/ui/`, `tests/`  
 
 ### 【要約】
 従来の「通常承認モード」と「トラストモード」の2段階構成に加え、中間モードとして「エディットモード（`--edit` / `/edit`）」を導入します。エディットモードでは、ファイルの作成・編集・リネーム・コピーを自動承認して作業速度を高めつつ、取り返しのつきにくいファイルの削除（`delete_path`）とサンドボックス内シェルコマンド実行（`run_sandbox_command`）については人間の都度確認（Human-in-the-loop）を維持します。また、確認操作が拒否された際は、自動承認対象のファイル書き換えも含めてすべての変更操作をサーキットブレーカーで遮断します。
+
+> **💡 現行仕様に関する補足:** `Project` / `DeveloperProject` の3段階承認モード制御およびサーキットブレーカー優先評価の仕様は現行コードと一致しています（CLI/UI側の描画・コマンド処理配置については [`012_ui_package_refactoring_for_textual.md`](./012_ui_package_refactoring_for_textual.md) も参照してください）。
 
 ---
 
@@ -138,3 +140,4 @@ def _check_circuit_breaker(self) -> None:
 | 日付 | 更新者 | ステータス | 変更内容の要約 |
 | :--- | :--- | :--- | :--- |
 | 2026-11-06 | AI Agent | 実装完了 | 初版作成および実装。3段階承認モード（normal / edit / trust）、`delete_path`・コマンド確認維持、即時切替メッセージ、および拒否後の全変更操作遮断（サーキットブレーカー）を規定。 |
+| 2026-11-17 | AI Agent | 実装完了（現行） | 設計書の3桁連番管理導入に伴い `009_edit_mode.md` へリネームし、ステータスを `実装完了（現行）` に更新。 |

@@ -1,12 +1,14 @@
-# 🔍 Web検索機能（Google Search Grounding）機能設計書
+# #001 Web検索機能（Google Search Grounding）機能設計書
 
 **作成日:** 2026年10月29日  
-**最終更新日:** 2026年11月09日  
-**ステータス:** 実装完了  
+**最終更新日:** 2026年11月17日  
+**ステータス:** 一部更新（#002, #012, #013 参照）  
 **対象システム:** `src/gemio/core/agent.py`, `src/gemio/core/prompts.py`, `src/gemio/cli/main.py`, `src/gemio/cli/ui.py`  
 
 ### 【要約】
 Gemini APIの Google Search Grounding を活用し、`/search`（または `/s`）コマンド明示時のみ安全に最新情報を検索する機能の設計書です。通常作業履歴（`chat_history`）からの機密情報隔離、連続深掘り検索セッション（`search_history`）、および出典ソース表示を定義します。
+
+> **💡 現行仕様に関する注記:** `/search` 明示オプトイン・通常対話履歴の機密隔離・連続深掘り検索の基本方針は現在も有効ですが、検索結果の保持方式は [`002_search_material_integration.md`](./002_search_material_integration.md) で「作業前提資料」へ分離され、内部クラス構成（旧 `AIChatAgent` / 旧 `ui.py`）は [`012_ui_package_refactoring_for_textual.md`](./012_ui_package_refactoring_for_textual.md) および [`013_core_package_refactoring.md`](./013_core_package_refactoring.md)（`SearchAgent` 分離）で刷新されています（検索誘導プロンプトも `src/gemio/cli/prompts.py` へ分離済み）。現行仕様は [`manuals/07_ARCHITECTURE_REFERENCE.md`](../../manuals/07_ARCHITECTURE_REFERENCE.md) を参照してください。
 
 ---
 
@@ -212,3 +214,4 @@ Gemio    > Tool call: write_file
 | 2026-10-29 | AI Agent | 実装完了 | 初版作成および実装完了。Google Search Grounding連携、機密隔離、連続深掘り検索セッションを実装。 |
 | 2026-11-08 | AI Agent | 実装完了 | ステータスを「実装完了」へ更新、対象ファイルパス表記を現行の `src/gemio/...` パッケージ構成に合わせて更新。 |
 | 2026-11-09 | AI Agent | 実装完了 | マニュアル類の `manuals/` 移設に伴い、`manuals/06_MANUAL_TEST_GUIDELINE.md` へのパス表記を更新。 |
+| 2026-11-17 | AI Agent | 一部更新（#002, #012, #013 参照） | 設計書の3桁連番管理導入に伴い `001_web_search.md` へリネームし、後続リファクタリングに関する案内注記を追加。 |

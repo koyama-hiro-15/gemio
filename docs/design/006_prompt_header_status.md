@@ -1,12 +1,14 @@
-# プロンプト入力欄ヘッダー（動作モード・承認モード表示）機能設計書
+# #006 プロンプト入力欄ヘッダー（動作モード・承認モード表示）機能設計書
 
 **作成日:** 2026年11月05日  
-**最終更新日:** 2026年11月07日  
-**ステータス:** 実装完了  
+**最終更新日:** 2026年11月17日  
+**ステータス:** 一部更新（#011, #012 参照）  
 **対象システム:** `src/gemio/cli/main.py`, `src/gemio/cli/ui.py`, `tests/test_cli_prompt.py`  
 
 ### 【要約】
 CLIの対話プロンプト入力欄の上部に、従来の対象プロジェクトパス（`project:`）に加えて現在の動作モード（`mode:`）と承認モード（`approval:`：通常承認モード／エディットモード／トラストモード）を2行ヘッダー構成で常時表示する機能を定義します。セッション中に `/edit` や `/trust`（`/auto`）で承認モードを切り替えた際もリアルタイムで表示とカラーリング（緑／黄／赤）が更新され、ユーザーの誤認・誤操作を防止します。
+
+> **💡 現行仕様に関する注記:** `project:` / `mode:` / `approval:` の色分け表示仕様は現在も有効ですが、後続の [`011_token_usage_and_session_reset.md`](./011_token_usage_and_session_reset.md) にてトークンサマリ行（`tokens:`）が追加され、実装箇所は [`012_ui_package_refactoring_for_textual.md`](./012_ui_package_refactoring_for_textual.md) にて `src/gemio/cli/ui/renderables.py`（`format_prompt_header`）へ移設されています。現行仕様は [`manuals/07_ARCHITECTURE_REFERENCE.md`](../../manuals/07_ARCHITECTURE_REFERENCE.md) を参照してください。
 
 ---
 
@@ -81,3 +83,4 @@ CLIの対話プロンプト入力欄の上部に、従来の対象プロジェ�
 | 2026-11-05 | AI Agent | 実装完了 | 初版作成および実装完了。2行ヘッダー構成による `project:` / `mode:` / `approval:` 表示機能を実装。 |
 | 2026-11-06 | AI Agent | 実装完了 | エディットモード（`approval_mode="edit"`、黄色表示）の追加を反映。 |
 | 2026-11-07 | AI Agent | 実装完了 | プロンプト入力欄クリア機能（`Esc+Backspace`）の導入に伴い、入力行ガイド表記を `User > (Esc+Enterで送信 / Esc+Backspaceでクリア):` に更新。 |
+| 2026-11-17 | AI Agent | 一部更新（#011, #012 参照） | 設計書の3桁連番管理導入に伴い `006_prompt_header_status.md` へリネームし、`#011`・`#012` への案内注記を追加。 |

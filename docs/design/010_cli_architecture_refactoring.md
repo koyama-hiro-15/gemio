@@ -1,12 +1,14 @@
-# CLIモジュール構造整理（UI分離 & GemioCLIクラス化）設計書
+# #010 CLIモジュール構造整理（UI分離 & GemioCLIクラス化）設計書
 
 **作成日:** 2026年11月07日  
-**最終更新日:** 2026年11月12日  
-**ステータス:** 実装完了  
+**最終更新日:** 2026年11月17日  
+**ステータス:** 置換済み（Superseded by #012, #013）  
 **対象システム:** `src/gemio/cli/main.py`, `src/gemio/cli/ui/` (`base.py`, `renderables.py`, `prompts.py`, `rich_ui.py`, `__init__.py`), `src/gemio/cli/__init__.py`, `tests/test_cli_prompt.py`, `tests/test_model_selection.py`  
 
 ### 【要約】
-機能追加に伴い肥大化した `src/gemio/cli/main.py` の可読性・保守性・テスト容易性を向上させるため、UI表示・対話入力層（`src/gemio/cli/ui/` パッケージ）とセッション制御層（`src/gemio/cli/main.py` の `GemioCLI` クラス）に分離します。さらに、`prompt_toolkit` および `rich` への外部ライブラリ依存をすべて `src/gemio/cli/ui/` に完全集約し、`GemioUI` 抽象インターフェースと `RichConsoleUI` 具象クラスによって将来のTextual移行にも対応可能な構成とします（詳細は `docs/design/design_ui_package_refactoring_for_textual.md` も参照）。
+機能追加に伴い肥大化した `src/gemio/cli/main.py` の可読性・保守性・テスト容易性を向上させるため、UI表示・対話入力層（`src/gemio/cli/ui/` パッケージ）とセッション制御層（`src/gemio/cli/main.py` の `GemioCLI` クラス）に分離します。さらに、`prompt_toolkit` および `rich` への外部ライブラリ依存をすべて `src/gemio/cli/ui/` に完全集約し、`GemioUI` 抽象インターフェースと `RichConsoleUI` 具象クラスによって将来のTextual移行にも対応可能な構成とします（詳細は [`012_ui_package_refactoring_for_textual.md`](./012_ui_package_refactoring_for_textual.md) も参照）。
+
+> **⚠️ 置換済みに関する注記:** 本設計書は `GemioCLI` クラス化とUI層分離の基礎を築いた記録ですが、単一ファイル `ui.py` 構成・`active_status` 管理・単一エージェント保持は、後続の [`012_ui_package_refactoring_for_textual.md`](./012_ui_package_refactoring_for_textual.md)（4層 `cli/ui/` パッケージ化・`GemioUI` DI化）および [`013_core_package_refactoring.md`](./013_core_package_refactoring.md)（`ChatAgent` / `SearchAgent` 分離）によって全面的に置き換えられています。現行仕様は `#012` および [`manuals/07_ARCHITECTURE_REFERENCE.md`](../../manuals/07_ARCHITECTURE_REFERENCE.md) を参照してください。
 
 ---
 
@@ -145,3 +147,4 @@ src/gemio/cli/
 | 2026-11-07 | AI Agent | 実装完了 | 初版作成。`ui.py` 分離と `GemioCLI` クラス導入によるハイブリッド構造整理の設計を策定。 |
 | 2026-11-11 | AI Agent | 実装完了 | `prompt_toolkit` と `rich` への全依存（`PromptSession`・スピナー生成・各種通知/エラーパネル等）を `ui.py` に完全集約し、`main.py` から両ライブラリの直接インポートを排除。 |
 | 2026-11-12 | AI Agent | 実装完了 | Textual移行およびエージェント分離を見据え、`ui.py` を `ui/` サブパッケージ（`base.py`, `renderables.py`, `prompts.py`, `rich_ui.py`, `__init__.py`）へ分割。 |
+| 2026-11-17 | AI Agent | 置換済み（Superseded by #012, #013） | 設計書の3桁連番管理導入に伴い `010_cli_architecture_refactoring.md` へリネームし、後続設計書による置換注記を追加。 |

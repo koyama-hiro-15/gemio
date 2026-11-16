@@ -1,12 +1,14 @@
-# プロジェクト構造・ファイル探索ツール（`get_structure` / `find_files` / `search_text`）機能設計書
+# #008 プロジェクト構造・ファイル探索ツール（`get_structure` / `find_files` / `search_text`）機能設計書
 
 **作成日:** 2026年11月06日  
-**最終更新日:** 2026年11月06日  
-**ステータス:** 実装完了  
-**対象システム:** `src/gemio/project/base.py`, `src/gemio/core/prompts.py`, `tests/test_project_base.py`  
+**最終更新日:** 2026年11月17日  
+**ステータス:** 実装完了（現行）  
+**対象システム:** `src/gemio/project/base.py`, `src/gemio/project/prompts.py`, `tests/test_project_base.py`  
 
 ### 【要約】
 中〜大規模なプロジェクトや大量のアセット・ログを含むディレクトリにおいて、ファイル一覧や全文検索の結果がコンテキストウィンドウを圧迫するリスクを防ぐとともに、単純な件数打ち切りによって「後半のフォルダやファイルが認識されず放置される問題」を構造的に解消するため、`get_structure` の階層・範囲指定拡張、`find_files`（ファイル名検索）の新規追加、および `search_text` の範囲指定・未表示フォルダ内訳サマリ機能を定義します。
+
+> **💡 現行仕様に関する補足:** `Project`（`src/gemio/project/base.py`）における各探索ツールの仕様は現行コードと一致しています（システムインストラクション定数の定義先のみ `v0.1.1` にて `src/gemio/project/prompts.py` へ移設済みです）。
 
 ---
 
@@ -219,3 +221,4 @@ MAX_SEARCH_RESULTS = 100          # search_text の1回あたりの最大表示�
 | 日付 | 更新者 | ステータス | 変更内容の要約 |
 | :--- | :--- | :--- | :--- |
 | 2026-11-06 | AI Agent | 実装完了 | 初版作成および実装完了。`get_structure` の幅優先・深さ制限・`target_dir` 対応、`find_files` の新規追加、`search_text` の上限・未表示フォルダ内訳サマリ仕様を定義・実装。 |
+| 2026-11-17 | AI Agent | 実装完了（現行） | 設計書の3桁連番管理導入に伴い `008_project_exploration_tools.md` へリネームし、ステータスを `実装完了（現行）` に更新。 |

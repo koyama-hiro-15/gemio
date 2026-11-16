@@ -1,12 +1,14 @@
-# Textual移行およびエージェント分離を見据えたUIパッケージ構造リファクタリング設計書
+# #012 Textual移行およびエージェント分離を見据えたUIパッケージ構造リファクタリング設計書
 
 **作成日:** 2026年11月12日  
-**最終更新日:** 2026年11月12日  
-**ステータス:** 実装完了  
+**最終更新日:** 2026年11月17日  
+**ステータス:** 実装完了（現行）  
 **対象システム:** `src/gemio/cli/main.py`, `src/gemio/cli/__init__.py`, `src/gemio/cli/ui/` (`base.py`, `renderables.py`, `prompts.py`, `rich_ui.py`, `__init__.py`), `tests/`  
 
 ### 【要約】
 Gemioの多機能化に伴うコンソールUIの表現力限界（対話ログとツール呼び出し/ステータス表示の混在、最下部固定プロンプトによる過去ログ参照の困難さ等）を解消し、将来的な `rich` から `textual` へのTUI移行および `AIChatAgent` の「通常対話処理」と「検索対話処理」の分離をスムーズに進めるため、現行のUI・操作感を維持したまま `src/gemio/cli/ui/` パッケージの構造を4層（抽象UI基底・Renderable純粋生成・対話プロンプト・Rich具象実装）へリファクタリングし、あわせてテストスイート全体を現行アーキテクチャ直結の9モジュール構成へ刷新します。
+
+> **💡 現行仕様に関する補足:** `src/gemio/cli/ui/` の4層構造（`base.py`, `renderables.py`, `prompts.py`, `rich_ui.py`）および `GemioCLI` への `GemioUI` DI注入は現行コードと一致しています（なお、直後の [`013_core_package_refactoring.md`](./013_core_package_refactoring.md) により、エージェント分離が実装されテストスイートは12モジュール構成へ拡充されています）。
 
 ---
 
@@ -21,7 +23,7 @@ Gemioの機能拡充に伴い、標準出力へ順次出力していく従来の
    プロンプト入力欄がコンソール最下部に固定されているため、上方に流れた過去のログや調査結果をスクロールして見比べながらプロンプトを作成することが難しい。
 
 ### 1.2 アーキテクチャ上の課題（As-Is）
-直近のリファクタリング（`design_cli_architecture_refactoring.md`）により、`main.py` から `rich` / `prompt_toolkit` の直接インポートは排除され `src/gemio/cli/ui.py` に集約されました。しかし、今後の **「Textualへの移行」** と **「`AIChatAgent` の通常対話・検索対話分離」** を見据えると、単一ファイルの `ui.py` には以下の課題が残っていました。
+直近のリファクタリング（[`010_cli_architecture_refactoring.md`](./010_cli_architecture_refactoring.md)）により、`main.py` から `rich` / `prompt_toolkit` の直接インポートは排除され `src/gemio/cli/ui.py` に集約されました。しかし、今後の **「Textualへの移行」** と **「`AIChatAgent` の通常対話・検索対話分離」** を見据えると、単一ファイルの `ui.py` には以下の課題が残っていました。
 
 1. **手続き的なモジュール直接呼び出しへの依存**:
    `GemioCLI` が `ui.print_welcome_banner(...)` 等のモジュール関数を直接呼び出しており、UIバックエンド（RichコンソールUI ⇄ Textual TUIアプリ）を抽象化して差し替える仕組みがない。
@@ -182,8 +184,9 @@ src/gemio/cli/
 
 ---
 
-## 6. 更新履歴
+## 7. 更新履歴
 
 | 日付 | 更新者 | ステータス | 変更内容の要約 |
 | :--- | :--- | :--- | :--- |
 | 2026-11-12 | AI Agent | 実装完了 | 初版作成および実装完了。Textual移行およびAIChatAgent分離を見据えた `src/gemio/cli/ui/` パッケージの4層リファクタリングを実装。 |
+| 2026-11-17 | AI Agent | 実装完了（現行） | 設計書の3桁連番管理導入に伴い `012_ui_package_refactoring_for_textual.md` へリネームし、ステータスを `実装完了（現行）` に更新。 |

@@ -1,7 +1,7 @@
 # 📚 Gemio マニュアル・ガイドライン一覧
 
 **作成日:** 2026年11月09日  
-**最終更新日:** 2026年11月14日  
+**最終更新日:** 2026年11月17日  
 **ステータス:** 運用中  
 **対象範囲:** `manuals/` 配下のエンドユーザー向け・コントリビューター向けマニュアル群（`01`〜`09`）  
 
@@ -57,12 +57,13 @@
 
 ## 🔗 関連ドキュメント（内部設計書・開発履歴）
 
-各機能の設計経緯や時系列の開発履歴については、[`docs/`](../docs/) ディレクトリ配下を参照してください。
+各機能の設計経緯や時系列の開発履歴については、[`docs/README.md`](../docs/README.md)（設計書インデックス）から参照してください。
 
-* **[`docs/PROJECT_SUMMARY.md`](../docs/PROJECT_SUMMARY.md)**: プロジェクト改修作業の要約・開発履歴サマリー
-* **[`docs/DOCUMENTATION_RULE.md`](../docs/DOCUMENTATION_RULE.md)**: 設計書・技術ドキュメント運用ルール
-* **[`docs/design/`](../docs/design/)**: 各機能の詳細設計書（Coreリファクタリング、UI 4層化、サンドボックス、Web検索、エラー回復、エディットモード、トークン管理 等）
+* **[`docs/README.md`](../docs/README.md)**: 設計書・技術ドキュメント一覧インデックス（ステータス・レイヤー別逆引き）
+* **[`docs/DOCUMENTATION_RULE.md`](../docs/DOCUMENTATION_RULE.md)**: 設計書・技術ドキュメント運用ルール（ADR型連番・ステータス規約）
+* **[`docs/design/`](../docs/design/)**: 各機能の詳細設計書（`001_`〜`013_` 連番管理）
 * **[`docs/tech_docs/`](../docs/tech_docs/)**: 技術調査資料・セキュリティ責任分界点マトリクス
+* **[`docs/PROJECT_SUMMARY.md`](../docs/PROJECT_SUMMARY.md)**: プロジェクト改修作業の要約・開発履歴サマリー
 
 ---
 
@@ -72,3 +73,4 @@
 | :--- | :--- | :--- | :--- |
 | 2026-11-09 | AI Agent | 運用中 | 初版作成（マニュアル類の `manuals/` フォルダ集約および連番化に伴い、目次・読書ロードマップを作成）。 |
 | 2026-11-14 | AI Agent | 運用中 | `06_SKILLS_AND_TOOLS_MANUAL.md`、`07_ARCHITECTURE_REFERENCE.md`、`08_CONTRIBUTING_GUIDE.md` の新設および手動テストガイドラインの `09_MANUAL_TEST_GUIDELINE.md` への繰り下げに伴い、エンドユーザー編（`01`〜`06`）とコントリビューター編（`07`〜`09`）の2部構成へ全面更新。 |
+| 2026-11-17 | AI Agent | 運用中 | `docs/README.md` 新設および `docs/design/` の3桁連番管理導入に伴い、関連ドキュメントのナビゲーションを更新。 |

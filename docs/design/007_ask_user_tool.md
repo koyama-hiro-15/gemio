@@ -1,12 +1,14 @@
-# ユーザー対話・確認ツール（`ask_user`）機能設計書
+# #007 ユーザー対話・確認ツール（`ask_user`）機能設計書
 
 **作成日:** 2026年11月06日  
-**最終更新日:** 2026年11月07日  
-**ステータス:** 実装完了  
+**最終更新日:** 2026年11月17日  
+**ステータス:** 一部更新（#012, #013 参照）  
 **対象システム:** `src/gemio/project/base.py`, `src/gemio/project/developer.py`, `src/gemio/core/agent.py`, `src/gemio/core/prompts.py`, `src/gemio/cli/main.py`, `src/gemio/cli/ui.py`, `tests/test_agent_ask_user.py`  
 
 ### 【要約】
 AIエージェントが推論・作業ループの途中で、仕様の曖昧さ、複数の実装方針の選択肢、承認拒否後の代替案、またはサンドボックス等の作業環境の不備に直面した際、無茶な推測や強行手段に出ることなく人間に対して質問・確認を行い、判断を仰ぐためのツール `Project.ask_user`（および `AIChatAgent` のプロンプトライフサイクルコールバック連携）を定義します。
+
+> **💡 現行仕様に関する注記:** `Project.ask_user`、承認拒否後のサーキットブレーカー解除連携、および選択肢＋自由記述＋Abort対応UIの仕様は現在も有効ですが、連携先のエージェント・UI構成は [`012_ui_package_refactoring_for_textual.md`](./012_ui_package_refactoring_for_textual.md)（`ui/prompts.py` & `renderables.py`）および [`013_core_package_refactoring.md`](./013_core_package_refactoring.md)（`ChatAgent`）へ移行し、プロンプト定義も `src/gemio/project/prompts.py` へ分離されています。現行仕様は [`manuals/07_ARCHITECTURE_REFERENCE.md`](../../manuals/07_ARCHITECTURE_REFERENCE.md) を参照してください。
 
 ---
 
@@ -235,3 +237,4 @@ Google GenAI SDK が関数シグネチャと Docstring からスキーマを自�
 | 2026-11-06 | AI Agent | 実装完了 | 初版作成および実装完了。`ask_user` ツールの仕様、サーキットブレーカー連携、CLI UI、システムプロンプト指針を定義・実装。 |
 | 2026-11-06 | AI Agent | 実装完了 | `ask_user` メソッドの配置を `AIChatAgent` から `Project` (`ask_user_callback`) へ移設し、`AIChatAgent` 側は `on_prompt_start` / `on_prompt_end` コールバックによる疎結合設計へ変更した現行仕様に合わせて設計書を更新。 |
 | 2026-11-07 | AI Agent | 実装完了 | `prompt_ask_user_response` (`src/gemio/cli/ui.py`) にて、`\\[a]` のRichマークアップタグ誤認防止エスケープおよび `question`・`options`・`context` のMarkdownレンダリング（`Table.grid` + `Markdown`）を追加。 |
+| 2026-11-17 | AI Agent | 一部更新（#012, #013 参照） | 設計書の3桁連番管理導入に伴い `007_ask_user_tool.md` へリネームし、`#012`・`#013` およびプロンプト分離に関する案内注記を追加。 |

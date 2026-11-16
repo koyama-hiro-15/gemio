@@ -1,12 +1,14 @@
-# Coreパッケージ構造リファクタリング 設計書
+# #013 Coreパッケージ構造リファクタリング 設計書
 
 **作成日:** 2026年11月12日  
-**最終更新日:** 2026年11月12日  
-**ステータス:** 実装完了  
+**最終更新日:** 2026年11月17日  
+**ステータス:** 実装完了（現行）  
 **対象システム:** `src/gemio/core/`（全モジュールおよび `context/`, `skills/`, `tools/` サブパッケージ）, `src/gemio/__init__.py`, `src/gemio/project/base.py`, `src/gemio/cli/main.py`, `src/gemio/cli/ui/`, `tests/`  
 
 ### 【要約】
 現在 `AIChatAgent` 単一クラスに集中している責務（通常対話ループ、Web検索、API通信・トークン集計、対話履歴、作業前提資料、静的プロンプト・ツール管理）を分割し、今後の機能拡張（対話の巻き戻し、クリップボード用抽出、前提資料の個別削除・ファイル読み込み追加、コンテキスト要約圧縮、Skills導入、および実験的な動的ツールセット機能）をスムーズに実装できるモジュラーな `src/gemio/core` パッケージ構造を定義します。あわせて、ハッシュ値による資料同一性管理、Skills/Toolsディレクトリの固定化、および前提資料追加権限の制御によってローカル環境情報の露出と冗長なパス処理を排除します。後方互換用の旧クラス名（`AIChatAgent` 等）は残さず、周辺パッケージとテストも含めて新構造へ完全に刷新します。
+
+> **💡 現行仕様に関する補足:** `src/gemio/core/` のモジュラー構成（`GenAIClient`, `TokenUsageTracker`, `ChatAgent`, `SearchAgent`, `context/`, `skills/`, `tools/`）および `.gemio/` 保護仕様は現行コードと一致しています（なお、`v0.1.1` にて上位層固有のシステムプロンプト定数が `src/gemio/project/prompts.py`・`src/gemio/cli/prompts.py` へ分離され、`SystemPromptComposer` の `dev_mode` 引数は `extra_sections` 方式へ整理済みです。詳細は [`manuals/07_ARCHITECTURE_REFERENCE.md`](../../manuals/07_ARCHITECTURE_REFERENCE.md) を参照してください）。
 
 ---
 
@@ -385,3 +387,4 @@ Google Search Grounding 専用の独立エージェントクラスです。
 | 2026-11-12 | AI Agent | 実装中（Phase 2 完了） | Phase 2 を実装完了。`ChatHistory` の範囲抽出・コピー用Markdown生成、`MaterialStore` の参照・再表示用整形、および `ContextCompactor`（`context/compactor.py`）による履歴要約圧縮を実装・単体テスト通過。 |
 | 2026-11-12 | AI Agent | 実装中（Phase 3 完了） | Phase 3 を実装完了。`tools/` サブパッケージ（`builtin.py`, `registry.py`, 固定 `.gemio/tools/` 用の `loader.py`）、`SystemPromptComposer`、`Project.agent_toolsets()`、および `ChatAgent` の毎イテレーション動的評価を統合・単体テスト通過。 |
 | 2026-11-12 | AI Agent | 実装完了 | Phase 4 を実装完了。固定2ディレクトリ方式の `skills/` サブパッケージ（`loader.py`, `manager.py`, `activate_skill`）および実験的機能 `tools/dynamic.py`（`DynamicToolsetProvider`, `request_tools`, `--dynamic-tools`）を実装し、全80件の単体テスト合格を確認。 |
+| 2026-11-17 | AI Agent | 実装完了（現行） | 設計書の3桁連番管理導入に伴い `013_core_package_refactoring.md` へリネームし、ステータス更新および `v0.1.1` プロンプト分離の補足注記を追加。 |

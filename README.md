@@ -177,9 +177,10 @@ docker compose down
     9. 📝 **[09_MANUAL_TEST_GUIDELINE.md](./manuals/09_MANUAL_TEST_GUIDELINE.md)** — 手動テストガイドライン（`git worktree` を使った安全な検証手順）
 
 ### 内部設計書・アーキテクチャ資料（[`docs/`](./docs/)）
-* **[`docs/PROJECT_SUMMARY.md`](./docs/PROJECT_SUMMARY.md)**: プロジェクト改修作業の要約・開発履歴サマリー
-* **[`docs/design/`](./docs/design/)**: 各機能の詳細設計書（サンドボックス、Web検索、エラー回復、エディットモード、トークン管理 等）
+* 🗂️ **[`docs/README.md`](./docs/README.md)**: 設計書・技術ドキュメント一覧インデックス（ステータス・レイヤー別逆引き）
+* **[`docs/design/`](./docs/design/)**: 各機能・リファクタリングの設計書（`001_`〜`013_` 連番管理）
 * **[`docs/tech_docs/`](./docs/tech_docs/)**: 技術調査資料・セキュリティ責任分界点マトリクス
+* **[`docs/PROJECT_SUMMARY.md`](./docs/PROJECT_SUMMARY.md)**: プロジェクト改修作業の要約・開発履歴サマリー
 
 ---
 
