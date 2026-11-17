@@ -36,6 +36,13 @@ dependencies = [
     "google-genai",
     "prompt_toolkit",
     "rich",
+    "textual",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
 ]
 
 [project.urls]
@@ -52,3 +59,5 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

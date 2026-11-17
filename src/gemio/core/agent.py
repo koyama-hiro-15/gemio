@@ -175,6 +175,21 @@ class ChatAgent:
                     thoughts.append(text.strip())
         return thoughts
 
+    @staticmethod
+    def _emit_turn_cancelled_log(on_log_append: Callable | None) -> str:
+        """ユーザーによるターン中断メッセージを構築し、ABORT カテゴリでログ出力します。"""
+        abort_text = (
+            "🚨 【作業の強制中止】\n"
+            "ユーザーによって現在のターンが中断されました。\n"
+            "現在のエージェント作業ループを停止しました。次の指示を入力してください。"
+        )
+        emit_agent_log(
+            on_log_append,
+            f"{get_now_time_text()}\n{abort_text}",
+            AgentLogCategory.ABORT,
+        )
+        return abort_text
+
     def _execute_agent_loop(
         self,
         max_iter: int,
@@ -182,6 +197,7 @@ class ChatAgent:
         turn_thoughts: list[str],
         on_log_append: Callable | None,
         tool_executor: Callable | None,
+        cancel_event: threading.Event | None = None,
     ) -> tuple[bool, str, int, bool]:
         """
         AIモデルとの生成およびツール呼び出しループを実行します。
@@ -195,6 +211,10 @@ class ChatAgent:
             emit_agent_log(on_log_append, warn_msg, AgentLogCategory.WARNING)
 
         for _ in range(max_iter):
+            if cancel_event is not None and cancel_event.is_set():
+                abort_text = self._emit_turn_cancelled_log(on_log_append)
+                return True, abort_text, executed_calls, True
+
             request_contents = self.session.build_request_contents(
                 pending_contents=turn_contents
             )
@@ -208,6 +228,10 @@ class ChatAgent:
                     usage_source="chat",
                 )
             except Exception:
+                if cancel_event is not None and cancel_event.is_set():
+                    abort_text = self._emit_turn_cancelled_log(on_log_append)
+                    return True, abort_text, executed_calls, True
+
                 error_text = (
                     "申し訳ありません。サーバー混雑または通信エラーが発生したため、処理を一時中断しました。\n"
                     "直前までに実行されたツール結果（ファイルの作成・修正など）は保持されています。\n"
@@ -220,6 +244,10 @@ class ChatAgent:
                 )
                 return True, error_text, executed_calls, True
 
+            if cancel_event is not None and cancel_event.is_set():
+                abort_text = self._emit_turn_cancelled_log(on_log_append)
+                return True, abort_text, executed_calls, True
+
             turn_thoughts.extend(self._extract_thoughts(response))
 
             if response.function_calls:
@@ -229,16 +257,21 @@ class ChatAgent:
                 for idx, function_call in enumerate(calls):
                     func_name = function_call.name
                     func_args = function_call.args or {}
-                    executed_calls += 1
-
-                    tool_log_msg = self._format_tool_call_log(func_name, func_args)
-                    emit_agent_log(
-                        on_log_append,
-                        f"{get_now_time_text()}\n{tool_log_msg}",
-                        AgentLogCategory.TOOL,
-                    )
 
                     try:
+                        if cancel_event is not None and cancel_event.is_set():
+                            raise AgentExecutionAborted(
+                                "ユーザーによって現在のターンが中断されました。"
+                            )
+
+                        executed_calls += 1
+                        tool_log_msg = self._format_tool_call_log(func_name, func_args)
+                        emit_agent_log(
+                            on_log_append,
+                            f"{get_now_time_text()}\n{tool_log_msg}",
+                            AgentLogCategory.TOOL,
+                        )
+
                         tool_result = self.tool_provider.execute(
                             func_name,
                             func_args,
@@ -293,6 +326,25 @@ class ChatAgent:
                             ],
                         )
                     )
+
+                    if cancel_event is not None and cancel_event.is_set():
+                        for remaining_call in calls[idx + 1 :]:
+                            turn_contents.append(
+                                types.Content(
+                                    role="user",
+                                    parts=[
+                                        types.Part.from_function_response(
+                                            name=remaining_call.name,
+                                            response={
+                                                "result": "[ABORTED] 作業が強制中止されたためスキップされました。"
+                                            },
+                                        )
+                                    ],
+                                )
+                            )
+                        abort_text = self._emit_turn_cancelled_log(on_log_append)
+                        return True, abort_text, executed_calls, True
+
                 continue
 
             response_text = response.text or ""
@@ -311,6 +363,8 @@ class ChatAgent:
         on_log_append: Callable | None = None,
         tool_executor: Callable | None = None,
         on_iteration_limit: Callable[[], tuple[bool, int]] | None = None,
+        *,
+        cancel_event: threading.Event | None = None,
     ) -> ChatTurnResult:
         """
         ユーザーからのプロンプトを同期的に処理し、1つの ChatTurn として対話履歴に確定記録します。
@@ -341,6 +395,7 @@ class ChatAgent:
                 turn_thoughts,
                 on_log_append,
                 tool_executor,
+                cancel_event=cancel_event,
             )
             total_tool_calls += calls_cnt
 
@@ -348,7 +403,9 @@ class ChatAgent:
                 limit_handler = on_iteration_limit or self.on_iteration_limit
 
                 while True:
-                    if limit_handler:
+                    if cancel_event is not None and cancel_event.is_set():
+                        should_continue, extra_iterations = False, 0
+                    elif limit_handler:
                         should_continue, extra_iterations = limit_handler()
                     else:
                         choice = (
@@ -387,6 +444,7 @@ class ChatAgent:
                                 turn_thoughts,
                                 on_log_append,
                                 tool_executor,
+                                cancel_event=cancel_event,
                             )
                         )
                         total_tool_calls += extra_calls
@@ -440,6 +498,8 @@ class ChatAgent:
         on_finished: Callable[[], None] | None = None,
         tool_executor: Callable | None = None,
         on_iteration_limit: Callable[[], tuple[bool, int]] | None = None,
+        *,
+        cancel_event: threading.Event | None = None,
     ) -> None:
         """非同期（別スレッド）でプロンプトを処理します。"""
 
@@ -450,6 +510,7 @@ class ChatAgent:
                     on_log_append=on_log_append,
                     tool_executor=tool_executor,
                     on_iteration_limit=on_iteration_limit,
+                    cancel_event=cancel_event,
                 )
             finally:
                 if on_finished:

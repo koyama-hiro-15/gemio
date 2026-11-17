@@ -6,6 +6,7 @@ Google Search Grounding 専用の Web 検索エージェント（SearchAgent）�
 """
 
 from dataclasses import dataclass, field
+import threading
 from typing import Callable
 
 from google.genai import types
@@ -25,6 +26,7 @@ class SearchResult:
     sources: list[dict[str, str]] = field(default_factory=list)
     created_at: str = ""
     succeeded: bool = True
+    aborted: bool = False
 
 
 class SearchAgent:
@@ -56,6 +58,8 @@ class SearchAgent:
         query: str,
         on_log_append: Callable | None = None,
         new_session: bool = False,
+        *,
+        cancel_event: threading.Event | None = None,
     ) -> SearchResult:
         """
         Google Search Grounding を用いて検索プロンプトを実行し、SearchResult を返します。
@@ -64,11 +68,28 @@ class SearchAgent:
             query: ユーザーからの検索クエリ文字列。
             on_log_append: ログ通知コールバック（任意）。
             new_session: True の場合、直前の検索文脈をリセットして新規検索セッションを開始します。
+            cancel_event: 検索キャンセル通知用のイベント（任意）。
         """
         if new_session:
             self.search_history.clear()
 
         start_time = get_now_time_text()
+        if cancel_event is not None and cancel_event.is_set():
+            cancel_msg = "ユーザーによってWeb検索が中断されました。"
+            emit_agent_log(
+                on_log_append,
+                f"{start_time}\n{cancel_msg}",
+                AgentLogCategory.ABORT,
+            )
+            return SearchResult(
+                query=query,
+                response_text=cancel_msg,
+                sources=[],
+                created_at=start_time,
+                succeeded=False,
+                aborted=True,
+            )
+
         emit_agent_log(
             on_log_append,
             f"{start_time}\n[Search] {query}",
@@ -98,6 +119,26 @@ class SearchAgent:
                 usage_source="search",
             )
         except Exception as e:
+            if self.search_history and self.search_history[-1].role == "user":
+                self.search_history.pop()
+
+            if cancel_event is not None and cancel_event.is_set():
+                cancel_time = get_now_time_text()
+                cancel_msg = "ユーザーによってWeb検索が中断されました。"
+                emit_agent_log(
+                    on_log_append,
+                    f"{cancel_time}\n{cancel_msg}",
+                    AgentLogCategory.ABORT,
+                )
+                return SearchResult(
+                    query=query,
+                    response_text=cancel_msg,
+                    sources=[],
+                    created_at=cancel_time,
+                    succeeded=False,
+                    aborted=True,
+                )
+
             error_text = (
                 f"申し訳ありません。Web検索中にサーバー混雑または通信エラーが発生しました: {e}"
             )
@@ -107,14 +148,31 @@ class SearchAgent:
                 f"{err_time}\n{error_text}",
                 AgentLogCategory.WARNING,
             )
-            if self.search_history and self.search_history[-1].role == "user":
-                self.search_history.pop()
             return SearchResult(
                 query=query,
                 response_text=error_text,
                 sources=[],
                 created_at=err_time,
                 succeeded=False,
+            )
+
+        if cancel_event is not None and cancel_event.is_set():
+            if self.search_history and self.search_history[-1].role == "user":
+                self.search_history.pop()
+            cancel_time = get_now_time_text()
+            cancel_msg = "ユーザーによってWeb検索が中断されました。"
+            emit_agent_log(
+                on_log_append,
+                f"{cancel_time}\n{cancel_msg}",
+                AgentLogCategory.ABORT,
+            )
+            return SearchResult(
+                query=query,
+                response_text=cancel_msg,
+                sources=[],
+                created_at=cancel_time,
+                succeeded=False,
+                aborted=True,
             )
 
         response_text = response.text or ""
