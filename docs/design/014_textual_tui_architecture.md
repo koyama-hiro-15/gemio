@@ -2,7 +2,7 @@
 
 **作成日:** 2026年11月17日  
 **最終更新日:** 2026年11月17日  
-**ステータス:** 実装中（Phase 1 完了）  
+**ステータス:** 実装中（Phase 2 完了）  
 **対象システム:** `pyproject.toml`, `requirements.txt`, `src/gemio/__init__.py`, `src/gemio/app/`, `src/gemio/tui/`, `src/gemio/cli/`, `tests/`  
 
 ### 【要約】
@@ -373,3 +373,4 @@ Textual のメインイベントループ（`asyncio`）を決してブロック
 | :--- | :--- | :--- | :--- |
 | 2026-11-17 | AI Agent | 設計完了（実装準備中） | 初版作成。Textual一本化方針、要求システム要件と6つの環境互換性ガードレール、4層パッケージ構造（`core`/`project`/`app`/`tui`/`cli`）、ユーザー生テキスト表示＋AI Markdown表示のタイムライン・モーダルUI設計、および実装ロードマップを策定。 |
 | 2026-11-17 | AI Agent | 実装中（Phase 1 完了） | Phase 1 実装完了。`pyproject.toml` への `textual` / `pytest-asyncio` 設定、`ChatAgent` / `SearchAgent` の安全なターン中断（`cancel_event`）対応、第3層 `src/gemio/app/`（`config`, `state`, `callbacks`, `commands`, `prompts`, `controller`）および単体テストを実装。 |
+| 2026-11-17 | AI Agent | 実装中（Phase 2 完了） | Phase 2 実装完了。第4層A `src/gemio/tui/` の基本骨格（`GemioApp`、`ThreadModalBridge`、`StatusHeader`、`ChatTimeline`、`TurnWidget`［ユーザー生テキスト表示＋AI Markdown描画＋`ActivityGroup` 折りたたみ］、`SearchTurnWidget`、`ActivityBar`、`PromptComposer`）および `80×24` ヘッドレステストを実装。 |

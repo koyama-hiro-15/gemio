@@ -1,0 +1,331 @@
+/* =========================================================================
+ * Gemio Textual TUI Stylesheet (256色互換・最小 80x24 レスポンシブ設計)
+ * ========================================================================= */
+
+Screen {
+    layout: vertical;
+    background: $surface;
+    color: $text;
+}
+
+/* 1. StatusHeader (上部固定バー) */
+StatusHeader {
+    dock: top;
+    width: 100%;
+    height: auto;
+    max-height: 2;
+    background: $panel;
+    color: $text;
+    border-bottom: solid $primary-darken-2;
+    padding: 0 1;
+}
+
+StatusHeader Horizontal {
+    width: 100%;
+    height: auto;
+}
+
+.header-brand {
+    text-style: bold;
+    color: $accent;
+    margin-right: 1;
+}
+
+.header-sep {
+    color: $text-muted;
+    margin: 0 1;
+}
+
+.header-badge {
+    padding: 0 1;
+    text-style: bold;
+}
+
+.header-badge:hover {
+    text-style: bold reverse;
+}
+
+.badge-mode-std {
+    color: $success;
+}
+
+.badge-mode-dev {
+    color: #d75fd7;
+}
+
+.badge-approval-normal {
+    color: $success;
+}
+
+.badge-approval-edit {
+    color: $warning;
+}
+
+.badge-approval-trust {
+    color: $error;
+}
+
+.badge-model {
+    color: $accent;
+}
+
+.badge-ctx-normal {
+    color: $success;
+}
+
+.badge-ctx-warning {
+    color: $warning;
+}
+
+.badge-ctx-danger {
+    color: $error;
+}
+
+/* 2. ChatTimeline (中央独立スクロール領域) */
+ChatTimeline {
+    width: 100%;
+    height: 1fr;
+    padding: 0 1;
+    scrollbar-size-vertical: 1;
+}
+
+/* WelcomeBanner */
+WelcomeBanner {
+    width: 100%;
+    height: auto;
+    border: round $accent;
+    background: $panel;
+    padding: 0 1;
+    margin: 1 0;
+}
+
+/* TurnWidget (1回の対話ターン) */
+TurnWidget {
+    width: 100%;
+    height: auto;
+    margin-bottom: 1;
+}
+
+/* UserMessageCard (ユーザー入力: プレーンテキストそのまま表示) */
+UserMessageCard {
+    width: 100%;
+    height: auto;
+    border-left: thick $success;
+    background: $panel;
+    padding: 0 1;
+    margin-top: 1;
+}
+
+.card-header-row {
+    width: 100%;
+    height: 1;
+    align: left middle;
+}
+
+.card-role-user {
+    text-style: bold;
+    color: $success;
+    width: 1fr;
+}
+
+.card-role-assistant {
+    text-style: bold;
+    color: $accent;
+    width: 1fr;
+}
+
+.card-role-aborted {
+    text-style: bold;
+    color: $error;
+    width: 1fr;
+}
+
+.card-role-search {
+    text-style: bold;
+    color: $accent;
+    width: 1fr;
+}
+
+.card-timestamp {
+    color: $text-muted;
+    margin-right: 1;
+}
+
+.copy-btn {
+    min-width: 6;
+    height: 1;
+    border: none;
+    padding: 0 1;
+    background: $surface-lighten-1;
+    color: $text;
+}
+
+.copy-btn:hover, .copy-btn:focus {
+    background: $accent;
+    color: $surface;
+    text-style: bold;
+}
+
+.user-prompt-body {
+    width: 100%;
+    height: auto;
+    padding-top: 0;
+    color: $text;
+}
+
+/* ActivityGroup (ツール呼び出し・思考ログ折りたたみ) */
+ActivityGroup {
+    width: 100%;
+    height: auto;
+    margin: 0 0 0 1;
+}
+
+ActivityGroup Collapsible {
+    width: 100%;
+    height: auto;
+    border: none;
+    background: $surface;
+    padding: 0;
+}
+
+.activity-log-item {
+    width: 100%;
+    height: auto;
+    padding-left: 2;
+}
+
+/* AssistantMessageCard (AI回答: Markdownレンダリング表示) */
+AssistantMessageCard {
+    width: 100%;
+    height: auto;
+    border-left: thick $accent;
+    background: $surface-darken-1;
+    padding: 0 1;
+    margin-top: 0;
+}
+
+AssistantMessageCard.aborted {
+    border-left: thick $error;
+}
+
+AssistantMessageCard Markdown {
+    width: 100%;
+    height: auto;
+    margin: 0;
+    padding: 0;
+}
+
+/* SearchTurnWidget (/search カード) */
+SearchTurnWidget {
+    width: 100%;
+    height: auto;
+    border: round $primary;
+    background: $surface-darken-1;
+    padding: 0 1;
+    margin-bottom: 1;
+}
+
+SearchTurnWidget.search-failed {
+    border: round $error;
+}
+
+.search-query-body {
+    width: 100%;
+    height: auto;
+    color: $text;
+    background: $panel;
+    padding: 0 1;
+    margin-bottom: 1;
+}
+
+SearchTurnWidget Markdown {
+    width: 100%;
+    height: auto;
+    margin: 0;
+    padding: 0;
+}
+
+.search-sources {
+    width: 100%;
+    height: auto;
+    color: $accent;
+    margin-top: 1;
+}
+
+.search-material-footer {
+    width: 100%;
+    height: auto;
+    color: $text-muted;
+    margin-top: 1;
+}
+
+/* 3. ActivityBar & PromptComposer (下部固定入力エリア) */
+ActivityBar {
+    width: 100%;
+    height: 1;
+    background: $surface;
+    color: $text-muted;
+    padding: 0 1;
+}
+
+ActivityBar.busy {
+    background: $primary-darken-3;
+    color: $warning;
+    text-style: bold;
+}
+
+.activity-status-text {
+    width: 1fr;
+    height: 1;
+}
+
+.cancel-turn-btn {
+    min-width: 14;
+    height: 1;
+    border: none;
+    padding: 0 1;
+    background: $error;
+    color: $text;
+    text-style: bold;
+}
+
+PromptComposer {
+    width: 100%;
+    height: auto;
+    background: $panel;
+    border-top: solid $primary;
+    padding: 0 1;
+}
+
+PromptComposer Horizontal {
+    width: 100%;
+    height: auto;
+    align: left bottom;
+}
+
+PromptTextArea {
+    width: 1fr;
+    height: 3;
+    min-height: 3;
+    max-height: 8;
+    border: tall $primary-darken-1;
+    background: $surface;
+}
+
+PromptTextArea:focus {
+    border: tall $accent;
+}
+
+.send-btn {
+    min-width: 8;
+    height: 3;
+    margin-left: 1;
+    background: $primary;
+    color: $text;
+    text-style: bold;
+}
+
+.send-btn:hover, .send-btn:focus {
+    background: $accent;
+    color: $surface;
+}
