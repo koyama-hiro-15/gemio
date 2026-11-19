@@ -1,12 +1,12 @@
 """
 Gemio Textual TUI メインアプリケーション（GemioApp）モジュール。
 
-4ゾーンレイアウト（StatusHeader / ChatTimeline / ActivityBar + PromptComposer / Footer）を構築し、
-ワーカースレッドでの非同期AI実行・検索、ThreadModalBridge による同期確認モーダル連携、
-およびアプリを終了させない安全なターン中断（Esc）を統括します。
+4ゾーンレイアウト（StatusHeader / ChatTimeline / ActivityBar + PromptComposer / Footer）、
+全9種の ModalScreen、コマンドパレット (Ctrl+P)、ワーカースレッド同期ブリッジ、
+およびアプリを終了させない安全なターン中断（Esc）を統合管理します。
 """
 
-from typing import Callable
+from typing import Any, Callable
 
 from textual import work
 from textual.app import App, ComposeResult
@@ -34,13 +34,29 @@ from gemio.app import (
 )
 from gemio.core.agent import ChatTurnResult
 from gemio.core.models import get_now_time_text
-from gemio.project import APPROVAL_MODE_EDIT, APPROVAL_MODE_NORMAL
+from gemio.project import (
+    APPROVAL_MODE_EDIT,
+    APPROVAL_MODE_NORMAL,
+    APPROVAL_MODE_TRUST,
+)
 from gemio.tui.bridge import ThreadModalBridge
+from gemio.tui.commands_palette import GemioCommandProvider
 from gemio.tui.messages import (
     CancelTurnRequested,
     CopyTextRequested,
     HeaderBadgeClicked,
     PromptSubmitted,
+)
+from gemio.tui.screens import (
+    ApiKeyModal,
+    ApprovalModal,
+    AskUserModal,
+    HelpModal,
+    IterationLimitModal,
+    ModelSelectModal,
+    SandboxStatusModal,
+    TokenUsageModal,
+    TrustConsentModal,
 )
 from gemio.tui.widgets import (
     ActivityBar,
@@ -49,6 +65,7 @@ from gemio.tui.widgets import (
     SearchTurnWidget,
     StatusHeader,
     TurnWidget,
+    WelcomeBanner,
 )
 
 
@@ -57,6 +74,7 @@ class GemioApp(App[int]):
 
     TITLE = "Gemio"
     CSS_PATH = "styles/app.tcss"
+    COMMANDS = App.COMMANDS | {GemioCommandProvider}
 
     BINDINGS = [
         Binding("ctrl+q", "quit_app", "終了", priority=True),
@@ -83,21 +101,25 @@ class GemioApp(App[int]):
         ]
         | None = None,
         bind_bridge: bool = True,
+        run_initial_sandbox_probe: bool = True,
     ) -> None:
         super().__init__()
         self.controller: GemioController = controller
+        self._run_initial_sandbox_probe = run_initial_sandbox_probe
         self.bridge = ThreadModalBridge(
             self,
-            approval_screen_factory=approval_screen_factory,
-            ask_user_screen_factory=ask_user_screen_factory,
-            iteration_limit_screen_factory=iteration_limit_screen_factory,
+            approval_screen_factory=approval_screen_factory or ApprovalModal,
+            ask_user_screen_factory=ask_user_screen_factory or AskUserModal,
+            iteration_limit_screen_factory=(
+                iteration_limit_screen_factory or IterationLimitModal
+            ),
             on_kill_requested=self._handle_emergency_kill,
         )
         if bind_bridge:
             self.controller.bind_interaction_handler(self.bridge)
 
     # =====================================================================
-    # 1. レイアウト構築 & ライフサイクル
+    # 1. レイアウト構築 & 起動オンボーディングチェーン
     # =====================================================================
 
     def compose(self) -> ComposeResult:
@@ -131,19 +153,100 @@ class GemioApp(App[int]):
         self._run_startup_onboarding()
 
     def _run_startup_onboarding(self) -> None:
-        """起動直後に必要なモーダル（コンテナAPIキー入力・トラスト同意）を順次処理します（Phase 3で拡張）。"""
-        pass
+        """起動直後に必要なモーダル（コンテナAPIキー入力 ➔ トラスト同意 ➔ サンドボックス検査）を順次実行します。"""
+        if self.controller.needs_api_key_input:
+            self.push_screen(
+                ApiKeyModal(),
+                callback=self._on_startup_api_key_entered,
+            )
+            return
+        self._continue_onboarding_trust_consent()
+
+    def _on_startup_api_key_entered(self, entered_key: str | None) -> None:
+        if not entered_key:
+            self.controller.close()
+            self.exit(result=1, return_code=1)
+            return
+        self.controller.set_api_key(entered_key)
+        self.refresh_status_and_welcome()
+        self.notify("APIキーを受け付けました。")
+        self._continue_onboarding_trust_consent()
+
+    def _continue_onboarding_trust_consent(self) -> None:
+        if self.controller.needs_initial_trust_consent:
+            self.push_screen(
+                TrustConsentModal(),
+                callback=self._on_startup_trust_consented,
+            )
+            return
+        self._continue_onboarding_sandbox_probe()
+
+    def _on_startup_trust_consented(self, consented: bool | None) -> None:
+        mode, fallback = self.controller.apply_initial_trust_consent(
+            bool(consented)
+        )
+        self.refresh_status_and_welcome()
+        if mode == APPROVAL_MODE_TRUST:
+            self.notify(
+                "トラストモード（自動承認）を有効化しました。",
+                severity="warning",
+            )
+        elif fallback and mode == APPROVAL_MODE_EDIT:
+            self.notify(
+                "トラストモードをキャンセルし、エディットモードで起動しました。"
+            )
+        elif fallback:
+            self.notify(
+                "トラストモードをキャンセルし、通常承認モードで起動しました。"
+            )
+        self._continue_onboarding_sandbox_probe()
+
+    def _continue_onboarding_sandbox_probe(self) -> None:
+        self.composer.focus_editor()
+        if self.controller.config.dev_mode and self._run_initial_sandbox_probe:
+            self._probe_startup_sandbox_in_thread()
+
+    @work(thread=True, group="sandbox_probe")
+    def _probe_startup_sandbox_in_thread(self) -> None:
+        try:
+            status = self.controller.inspect_sandbox()
+            self.call_from_thread(self._on_startup_sandbox_probed, status)
+        except Exception:
+            pass
+
+    def _on_startup_sandbox_probed(self, status: dict[str, Any]) -> None:
+        warnings = status.get("warnings") or []
+        danger_cnt = sum(1 for w in warnings if w.get("level") == "danger")
+        warn_cnt = sum(1 for w in warnings if w.get("level") == "warning")
+
+        if danger_cnt > 0:
+            # 機密キー露出や未マスク機密ファイルがある場合は即座に診断モーダルを開いて警告
+            self.push_screen(SandboxStatusModal(status))
+        elif warn_cnt > 0:
+            self.notify(
+                f"サンドボックス注意項目が {warn_cnt} 件あります（詳細: /sandbox）。",
+                severity="warning",
+            )
 
     def refresh_status(self) -> None:
         """コントローラの最新スナップショットで StatusHeader を更新します。"""
         if self.is_mounted:
             self.status_header.update_snapshot(self.controller.get_snapshot())
 
+    def refresh_status_and_welcome(self) -> None:
+        """StatusHeader とタイムライン先頭の WelcomeBanner をともに最新スナップショットで更新します。"""
+        if not self.is_mounted:
+            return
+        snap = self.controller.get_snapshot()
+        self.status_header.update_snapshot(snap)
+        for wb in self.timeline.query(WelcomeBanner):
+            wb.update_snapshot(snap)
+
     def _handle_emergency_kill(self) -> None:
         """承認モーダル等で 'k' (Kill) が選択された際の緊急停止・終了処理。"""
         self.bridge.cancel_all_pending()
         self.controller.close()
-        self.exit(1)
+        self.exit(result=1, return_code=1)
 
     # =====================================================================
     # 2. カスタムメッセージハンドラ
@@ -179,7 +282,6 @@ class GemioApp(App[int]):
             self.action_quit_app()
             return
 
-        # 実行中でも安全に参照できる読み取り専用コマンド
         if isinstance(parsed, HelpCommand):
             self.composer.clear_after_accept()
             self.action_show_help()
@@ -212,9 +314,7 @@ class GemioApp(App[int]):
             self._execute_trust_mode(parsed.enable)
         elif isinstance(parsed, ModelCommand):
             if parsed.target_model:
-                new_model = self.controller.set_model(parsed.target_model)
-                self.refresh_status()
-                self.notify(f"AIモデルを切り替えました: {new_model}")
+                self._switch_model_directly(parsed.target_model)
             else:
                 self.action_select_model()
         elif isinstance(parsed, RewindCommand):
@@ -223,16 +323,9 @@ class GemioApp(App[int]):
             self._start_compact_worker(parsed.keep_recent_turns)
         elif isinstance(parsed, SearchCommand):
             if parsed.clear_materials:
-                cleared = self.controller.clear_search_materials()
-                self.refresh_status()
-                self.notify(
-                    f"保持していた作業前提資料（{cleared}件）を破棄しました。"
-                )
+                self._clear_search_materials_action()
             elif parsed.show_help:
-                self.notify(
-                    "使い方: /search <調べたい内容> (-n: 新規検索 / -c: 資料破棄)",
-                    title="Web検索 (/search)",
-                )
+                self.push_screen(HelpModal(initial_tab="tab-commands"))
             else:
                 self._start_search_worker(
                     parsed.query,
@@ -245,7 +338,31 @@ class GemioApp(App[int]):
     # 3. 状態変更・セッション操作ヘルパー
     # =====================================================================
 
+    def _switch_model_directly(self, target_model: str) -> None:
+        new_model = self.controller.set_model(target_model)
+        self.refresh_status_and_welcome()
+        self.notify(f"AIモデルを切り替えました: {new_model}")
+
+    def _clear_search_materials_action(self) -> None:
+        if self.controller.is_busy:
+            self.notify("AI処理中は資料をクリアできません。", severity="warning")
+            return
+        cleared = self.controller.clear_search_materials()
+        self.refresh_status()
+        self.notify(f"保持していた作業前提資料（{cleared}件）を破棄しました。")
+
+    def _set_normal_approval_mode(self) -> None:
+        _, changed = self.controller.set_approval_mode(APPROVAL_MODE_NORMAL)
+        self.refresh_status_and_welcome()
+        if changed:
+            self.notify("通常承認モード（都度確認）に戻しました。")
+        else:
+            self.notify("現在はすでに通常承認モードです。")
+
     def _execute_clear_session(self, clear_materials: bool = False) -> None:
+        if self.controller.is_busy:
+            self.notify("AI処理中はセッションをクリアできません。", severity="warning")
+            return
         summary = self.controller.clear_session(clear_materials=clear_materials)
         snap = self.controller.get_snapshot()
         self.status_header.update_snapshot(snap)
@@ -261,7 +378,7 @@ class GemioApp(App[int]):
 
     def _execute_edit_mode(self, enable: bool | None = None) -> None:
         enabled, changed = self.controller.set_edit_mode(enable)
-        self.refresh_status()
+        self.refresh_status_and_welcome()
         if not changed:
             label = "エディットモード" if enabled else "通常承認モード"
             self.notify(f"現在はすでに {label} です。")
@@ -278,7 +395,7 @@ class GemioApp(App[int]):
         target = (not self.controller.project.trust_mode) if enable is None else enable
         if not target:
             _, changed = self.controller.set_trust_mode(False)
-            self.refresh_status()
+            self.refresh_status_and_welcome()
             if changed:
                 self.notify("通常承認モード（都度確認）に戻しました。")
             else:
@@ -292,13 +409,27 @@ class GemioApp(App[int]):
         self._request_trust_mode_activation()
 
     def _request_trust_mode_activation(self) -> None:
-        """トラストモード有効化前の同意確認を行います（Phase 3 で TrustConsentModal を接続）。"""
-        self.notify(
-            "トラストモード同意確認モーダルは Phase 3 で接続されます。",
-            severity="warning",
+        self.push_screen(
+            TrustConsentModal(),
+            callback=self._on_runtime_trust_consent,
         )
 
+    def _on_runtime_trust_consent(self, consented: bool | None) -> None:
+        if consented:
+            self.controller.set_trust_mode(True)
+            self.refresh_status_and_welcome()
+            self.notify(
+                "トラストモード（自動承認）を有効化しました。",
+                severity="warning",
+            )
+        else:
+            self.notify("トラストモードへの切り替えをキャンセルしました。")
+        self.composer.focus_editor()
+
     def _execute_rewind(self, steps: int = 1) -> None:
+        if self.controller.is_busy:
+            self.notify("AI処理中は巻き戻しできません。", severity="warning")
+            return
         removed_turns = self.controller.rewind_turns(steps=steps)
         if not removed_turns:
             self.notify("巻き戻せる対話ターンがありません。", severity="warning")
@@ -308,7 +439,7 @@ class GemioApp(App[int]):
         self.notify(f"直近 {len(removed_turns)} ターンを巻き戻しました。")
 
     # =====================================================================
-    # 4. 非同期ワーカー実行（通常対話 / Web検索 / コンテキスト圧縮）
+    # 4. 非同期ワーカー実行（通常対話 / Web検索 / コンテキスト圧縮 / 診断）
     # =====================================================================
 
     def _start_chat_worker(self, prompt_text: str) -> None:
@@ -475,6 +606,9 @@ class GemioApp(App[int]):
         self.timeline.follow_if_near_bottom()
 
     def _start_compact_worker(self, keep_recent_turns: int) -> None:
+        if self.controller.is_busy:
+            self.notify("AI処理中はコンテキスト圧縮を実行できません。", severity="warning")
+            return
         if not self.controller.is_client_ready:
             self.notify("APIキーが設定されていません。", severity="error")
             return
@@ -503,10 +637,28 @@ class GemioApp(App[int]):
 
     def _handle_compact_error_on_main(self, error: Exception) -> None:
         self.activity_bar.stop_busy()
-        self.notify(f"コンテキスト圧縮中にエラーが発生しました: {error}", severity="error")
+        self.notify(
+            f"コンテキスト圧縮中にエラーが発生しました: {error}",
+            severity="error",
+        )
+
+    @work(thread=True, exclusive=True, group="sandbox_inspect")
+    def _inspect_sandbox_for_modal_in_thread(self) -> None:
+        try:
+            status = self.controller.inspect_sandbox()
+            self.call_from_thread(
+                lambda st: self.push_screen(SandboxStatusModal(st)),
+                status,
+            )
+        except Exception as err:
+            self.call_from_thread(
+                self.notify,
+                f"サンドボックス診断エラー: {err}",
+                severity="error",
+            )
 
     # =====================================================================
-    # 5. キーバインドアクション群
+    # 5. キーバインド・モーダルアクション群
     # =====================================================================
 
     def action_cancel_turn(self) -> None:
@@ -544,35 +696,52 @@ class GemioApp(App[int]):
         if curr == APPROVAL_MODE_NORMAL:
             self._execute_edit_mode(True)
         else:
-            self.controller.set_approval_mode(APPROVAL_MODE_NORMAL)
-            self.refresh_status()
-            self.notify("通常承認モード（都度確認）に切り替えました。")
+            self._set_normal_approval_mode()
 
     def action_show_help(self) -> None:
-        """ヘルプ画面を開きます（Phase 3 で HelpModal を接続）。"""
-        self.notify("ヘルプ: Ctrl+J/Alt+Enter=送信, Alt+Backspace=全消去, Esc=中断, Ctrl+Q=終了")
+        """ヘルプモーダルを開きます。"""
+        self.push_screen(HelpModal())
 
     def action_select_model(self) -> None:
-        """モデル選択画面を開きます（Phase 3 で ModelSelectModal を接続）。"""
-        self.notify(f"現在のモデル: {self.controller.current_model} (/model <名前> で変更可)")
+        """モデル選択モーダルを開きます。"""
+        self.push_screen(
+            ModelSelectModal(self.controller.current_model),
+            callback=self._on_model_selected,
+        )
+
+    def _on_model_selected(self, selected: str | None) -> None:
+        if selected:
+            self._switch_model_directly(selected)
+        self.composer.focus_editor()
 
     def action_show_tokens(self) -> None:
-        """トークン診断画面を開きます（Phase 3 で TokenUsageModal を接続）。"""
-        usage = self.controller.get_token_usage()
-        ctx = usage.get("last_prompt_tokens", 0)
-        cum = usage.get("cumulative_total_tokens", 0)
-        self.notify(f"Tokens — Context: {ctx:,} / Cumulative: {cum:,}")
+        """トークン使用量・コンテキスト診断モーダルを開きます。"""
+        self.push_screen(
+            TokenUsageModal(self.controller.get_token_usage()),
+            callback=self._on_token_modal_closed,
+        )
+
+    def _on_token_modal_closed(self, action: str | None) -> None:
+        if action == "clear":
+            self._execute_clear_session(clear_materials=False)
+        elif action == "clear_all":
+            self._execute_clear_session(clear_materials=True)
+        self.composer.focus_editor()
 
     def action_show_sandbox(self) -> None:
-        """サンドボックス診断画面を開きます（Phase 3 で SandboxStatusModal を接続）。"""
-        snap = self.controller.get_snapshot()
-        self.notify(f"動作モード: {snap.mode_display_label}")
+        """サンドボックス・ワークスペース保護診断モーダルを開きます。"""
+        if not self.controller.config.dev_mode:
+            self.push_screen(
+                SandboxStatusModal(self.controller.inspect_sandbox())
+            )
+            return
+        self._inspect_sandbox_for_modal_in_thread()
 
     def action_quit_app(self) -> None:
         """稼働中の子プロセスや待機モーダルをクリーンアップして TUI を終了します。"""
         self.bridge.cancel_all_pending()
         self.controller.close()
-        self.exit(0)
+        self.exit(result=0, return_code=0)
 
 
 __all__ = [
