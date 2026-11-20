@@ -303,3 +303,75 @@ async def test_thread_modal_bridge_and_esc_safe_turn_cancel(tmp_path):
                 last_turn = app2.controller.chat_session.history.last_turn
                 assert last_turn is not None
                 assert last_turn.aborted is True
+
+
+async def test_phase1_layout_header_copy_buttons_collapsible_and_composer_height(tmp_path):
+    """
+    1. StatusHeader の全バッジが 80x24 画面内に収まって表示されること
+    2. UserMessageCard / AssistantMessageCard / SearchTurnWidget の Copy ボタンがヘッダー行内に収まること
+    3. ActivityGroup 展開時の高さが内容の行数（タイトル1行 + ログ行数）に一致すること
+    4. PromptTextArea が改行ごとに即座に1行ずつ伸長すること（border分の2行を考慮）
+    """
+    from textual.widgets import Button
+
+    cfg = AppConfig(project_path=tmp_path)
+    with patch("gemio.core.client.genai.Client"):
+        ctrl = GemioController(cfg)
+        app = GemioApp(ctrl)
+
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.pause()
+
+            # 1. StatusHeader の全バッジがヘッダー領域内に収まっていること
+            hdr = app.status_header
+            for wid in (
+                "#hdr-project",
+                "#hdr-mode",
+                "#hdr-approval",
+                "#hdr-model",
+                "#hdr-tokens",
+            ):
+                badge = hdr.query_one(wid)
+                assert badge.region.width > 0
+                assert hdr.region.contains_region(badge.region), f"{wid} がヘッダー外にはみ出しています"
+
+            # 2. 対話ログ・検索カードの Copy ボタンが各カードのヘッダー行内に収まること
+            tw = TurnWidget("hello\nworld")
+            app.timeline.mount_entry(tw, force_scroll=True)
+            tw.activity_group.add_tool_call("12:00:00", "Tool call: read_file (file_path='a.py')")
+            tw.activity_group.add_tool_call("12:00:01", "Tool call: write_file (file_path='b.py')")
+            tw.assistant_card.set_response("AI answer", timestamp="12:00:02")
+            sw = SearchTurnWidget("query")
+            app.timeline.mount_entry(sw, force_scroll=True)
+            await pilot.pause()
+
+            for card in (tw.user_card, tw.assistant_card, sw):
+                row = card.query_one(".card-header-row")
+                copy_btn = card.query_one(".copy-btn", Button)
+                assert copy_btn.region.width > 0
+                assert row.region.contains_region(copy_btn.region)
+
+            # 3. ActivityGroup 展開時の高さが内容行数（タイトル1行 + 2行 = 3行）と一致すること
+            col = tw.activity_group.query_one(Collapsible)
+            col.collapsed = False
+            await pilot.pause()
+            items = tw.activity_group.query_one(".activity-items")
+            assert items.region.height == 2
+            assert tw.activity_group.region.height == 3
+
+            # 4. PromptTextArea が1行→2行→3行で即座に内寸1→2→3行へ伸長すること
+            ed = app.composer.editor
+            ed.load_text("line1")
+            await pilot.pause()
+            assert ed.region.height == 3
+            assert ed.content_region.height == 1
+
+            ed.load_text("line1\nline2")
+            await pilot.pause()
+            assert ed.region.height == 4
+            assert ed.content_region.height == 2
+
+            ed.load_text("line1\nline2\nline3")
+            await pilot.pause()
+            assert ed.region.height == 5
+            assert ed.content_region.height == 3

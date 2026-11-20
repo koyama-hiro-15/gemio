@@ -299,11 +299,14 @@ async def test_help_model_tokens_modals_and_command_palette(tmp_path):
         app = GemioApp(ctrl)
 
         async with app.run_test(size=(80, 24)) as pilot:
-            # 1. F1 -> HelpModal 開閉
+            # 1. F1 -> HelpModal 開閉（閉じるボタンがダイアログ内に収まりクリックで閉じられること）
             await pilot.press("f1")
             await pilot.pause()
             assert isinstance(app.screen, HelpModal)
-            await pilot.press("escape")
+            dlg = app.screen.query_one(".modal-dialog-large")
+            close_btn = app.screen.query_one("#btn-close")
+            assert dlg.region.contains_region(close_btn.region)
+            await pilot.click("#btn-close")
             await pilot.pause()
             assert not isinstance(app.screen, HelpModal)
 

@@ -26,19 +26,27 @@ StatusHeader Horizontal {
 }
 
 .header-brand {
+    width: auto;
+    max-width: 28;
     text-style: bold;
     color: $accent;
-    margin-right: 1;
+    padding-right: 1;
+    text-wrap: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
 }
 
 .header-sep {
+    width: auto;
     color: $text-muted;
-    margin: 0 1;
+    margin: 0;
 }
 
 .header-badge {
+    width: auto;
     padding: 0 1;
     text-style: bold;
+    text-wrap: nowrap;
 }
 
 .header-badge:hover {
@@ -147,11 +155,13 @@ UserMessageCard {
 }
 
 .card-timestamp {
+    width: auto;
     color: $text-muted;
     margin-right: 1;
 }
 
 .copy-btn {
+    width: auto;
     min-width: 6;
     height: 1;
     border: none;
@@ -188,10 +198,21 @@ ActivityGroup Collapsible {
     padding: 0;
 }
 
+ActivityGroup Collapsible > Contents {
+    width: 100%;
+    height: auto;
+    padding: 0 0 0 2;
+}
+
+.activity-items {
+    width: 100%;
+    height: auto;
+}
+
 .activity-log-item {
     width: 100%;
     height: auto;
-    padding-left: 2;
+    padding-left: 0;
 }
 
 /* AssistantMessageCard (AI回答: Markdownレンダリング表示) */
@@ -400,6 +421,22 @@ HelpModal {
     width: 100%;
     height: 1fr;
     padding: 0 1;
+}
+
+#help-tabs {
+    width: 100%;
+    height: 1fr;
+}
+
+#help-tabs > ContentSwitcher {
+    width: 100%;
+    height: 1fr;
+}
+
+#help-tabs TabPane {
+    width: 100%;
+    height: 1fr;
+    padding: 0;
 }
 
 .modal-hint {

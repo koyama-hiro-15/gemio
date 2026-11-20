@@ -17,6 +17,9 @@ _SPINNER_FRAMES = ("|", "/", "-", "\\")
 _IDLE_GUIDE_TEXT = (
     "Ready — Ctrl+J / Alt+Enter: 送信 | Enter: 改行 | Alt+Backspace: 全消去 | PageUp/Down: ログスクロール"
 )
+# PromptTextArea は border: tall により上下2行の枠を消費するため、
+# height=3 が内寸1行、height=8 が内寸6行に対応する。
+COMPOSER_BORDER_HEIGHT = 2
 MIN_COMPOSER_LINES = 3
 MAX_COMPOSER_LINES = 8
 
@@ -132,10 +135,19 @@ class PromptTextArea(TextArea):
 
     def _sync_auto_height(self) -> None:
         line_cnt = max(1, self.document.line_count)
-        new_height = min(MAX_COMPOSER_LINES, max(MIN_COMPOSER_LINES, line_cnt + 1))
+        visual_lines = line_cnt
+        if self.is_mounted and self.size.width > 0:
+            visual_lines = max(line_cnt, self.wrapped_document.height)
+        new_height = min(
+            MAX_COMPOSER_LINES,
+            max(MIN_COMPOSER_LINES, visual_lines + COMPOSER_BORDER_HEIGHT),
+        )
         self.styles.height = new_height
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
+        self._sync_auto_height()
+
+    def on_resize(self, event: events.Resize) -> None:
         self._sync_auto_height()
 
     async def _on_key(self, event: events.Key) -> None:
