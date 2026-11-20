@@ -1,6 +1,9 @@
 services:
   sandbox:
-    container_name: gemio-sandbox
+    # どのフォルダでコンテナを起動しても、共通のイメージを使用する
+    image: gemio-sandbox
+    # Gemioが自動でコンテナを探して接続するため不要だが、固定の名前が必要な場合に有効にする
+    # container_name: gemio-sandbox
     build:
       context: .
       dockerfile: Dockerfile
