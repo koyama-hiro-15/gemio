@@ -1,3 +1,15 @@
+from gemio.app import (
+    APP_DEFAULT_MAX_ITERATIONS,
+    APP_SEARCH_GUIDANCE_INSTRUCTION,
+    AppConfig,
+    AppStartupError,
+    GemioController,
+    InteractionHandler,
+    SearchOutcome,
+    SessionSnapshot,
+    parse_slash_command,
+    validate_project_dir,
+)
 from gemio.core import (
     AgentExecutionAborted,
     AgentLogCategory,
@@ -67,10 +79,20 @@ from gemio.project.prompts import (
     PROJECT_SYSTEM_INSTRUCTION,
 )
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 __all__ = [
     "__version__",
+    "APP_DEFAULT_MAX_ITERATIONS",
+    "APP_SEARCH_GUIDANCE_INSTRUCTION",
+    "AppConfig",
+    "AppStartupError",
+    "GemioController",
+    "InteractionHandler",
+    "SessionSnapshot",
+    "SearchOutcome",
+    "parse_slash_command",
+    "validate_project_dir",
     "ChatAgent",
     "ChatTurnResult",
     "SearchAgent",

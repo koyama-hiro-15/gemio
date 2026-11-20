@@ -150,7 +150,7 @@ def test_core_system_instructions_isolation_and_dynamic_prompt_composer():
     pyproject_path = Path(__file__).resolve().parent.parent / "pyproject.toml"
     pyproject_data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     assert re.match(r"^\d+\.\d+\.\d+$", gemio.__version__)
-    assert gemio.__version__ == "0.1.1"
+    assert gemio.__version__ == "0.2.0"
     assert pyproject_data["project"]["version"] == gemio.__version__
 
     assert "【外部情報および不確実な事実に関するルール】" in DEFAULT_SYSTEM_INSTRUCTION

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gemio"
-version = "0.1.1"
-description = "Gemio: AI Assistant & Sandbox-Ready Development Agent Library and CLI"
+version = "0.2.0"
+description = "Gemio: AI Assistant & Sandbox-Ready Development Agent Library and TUI"
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [
@@ -34,7 +34,6 @@ classifiers = [
 ]
 dependencies = [
     "google-genai",
-    "prompt_toolkit",
     "rich",
     "textual",
 ]

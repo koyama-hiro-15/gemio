@@ -27,7 +27,7 @@
 
 * **Core層（通信・コンテキスト・`ChatAgent` / `SearchAgent`・Skills・Tools）**: 👉 **[`#013`](./design/013_core_package_refactoring.md)**（背景経緯: `#001`, `#002`, `#003`, `#011`）
 * **Project層（ファイル探索・3段階承認・Dockerサンドボックス・`ask_user`）**: 👉 **[`#005`](./design/005_sandbox_and_developer_mode.md)**, **[`#007`](./design/007_ask_user_tool.md)**, **[`#008`](./design/008_project_exploration_tools.md)**, **[`#009`](./design/009_edit_mode.md)**
-* **CLI / UI層（`GemioCLI`・4層 `cli/ui/` パッケージ・プロンプト表示）**: 👉 現行 **[`#012`](./design/012_ui_package_refactoring_for_textual.md)** ／ 次期TUI移行計画 **[`#014`](./design/014_textual_tui_architecture.md)**（関連UI仕様: `#004`, `#006`, `#011`）
+* **App / TUI / CLI層（`GemioController`・Textual `GemioApp`・モーダル・操作体系）**: 👉 **[`#014`](./design/014_textual_tui_architecture.md)**（背景経緯: `#004`, `#006`, `#011`, `#012`）
 
 ---
 
@@ -48,9 +48,9 @@
 | **#009** | **[009_edit_mode.md](./design/009_edit_mode.md)**<br>エディットモード（Edit Mode） | 2026-11-06 | Project / CLI | ✅ **実装完了（現行）** | 作成・編集は自動承認し、削除（`delete_path`）とコマンド実行のみ都度確認を残す中間承認モード（`--edit` / `/edit`）と拒否後遮断制御。 |
 | **#010** | **[010_cli_architecture_refactoring.md](./design/010_cli_architecture_refactoring.md)**<br>CLIモジュール構造整理（UI分離 & `GemioCLI`化） | 2026-11-07 | CLI / UI | 📦 置換済み<br>(Superseded by `#012`, `#013`) | 肥大化した `main.py` からUI依存を分離し `GemioCLI` クラスを導入した第1段階リファクタリング記録（※構造は `#012` で4層パッケージへ発展置換）。 |
 | **#011** | **[011_token_usage_and_session_reset.md](./design/011_token_usage_and_session_reset.md)**<br>累積トークン量確認 & セッションリセット | 2026-11-07 | Core / CLI / UI | 🔄 一部更新<br>(`#012`, `#013` 参照) | 現在のコンテキスト量と累積トークン消費量の2軸トラッキング、3段階健全性診断、`/tokens` 詳細パネル、および `/clear` 即時セッションリセット。 |
-| **#012** | **[012_ui_package_refactoring_for_textual.md](./design/012_ui_package_refactoring_for_textual.md)**<br>Textual移行を見据えたUI 4層パッケージ刷新 | 2026-11-12 | CLI / UI | ✅ **実装完了（現行）** | 将来のTextual TUI化を見据えた `src/gemio/cli/ui/` の4層分離（`GemioUI` 抽象基底、`renderables` 純粋生成、`prompts`、`RichConsoleUI`）とDI化。 |
-| **#013** | **[013_core_package_refactoring.md](./design/013_core_package_refactoring.md)**<br>Coreパッケージ構造全面リファクタリング | 2026-11-12 | Core / Project / CLI | ✅ **実装完了（現行）** | `GenAIClient`・`ChatAgent`・`SearchAgent` 分離、ターン履歴・SHA-256管理 `MaterialStore`・要約圧縮（`context/`）、Skills段階的開示、動的ツール基盤。 |
-| **#014** | **[014_textual_tui_architecture.md](./design/014_textual_tui_architecture.md)**<br>Textual TUI一本化・4層パッケージ再編・画面/操作設計 | 2026-11-17 | App / TUI / CLI | 📝 設計完了（実装準備中） | `prompt_toolkit` 廃止とTextual完全一本化、`app`/`tui`/`cli` 再編、最小 `80×24` 対応シングルカラムUI、ユーザー生テキスト表示＋AI Markdown描画、モーダル・ターン中断設計。 |
+| **#012** | **[012_ui_package_refactoring_for_textual.md](./design/012_ui_package_refactoring_for_textual.md)**<br>Textual移行を見据えたUI 4層パッケージ刷新 | 2026-11-12 | CLI / UI | 📦 置換済み<br>(Superseded by `#014`) | Textual化に先立ち旧 `src/gemio/cli/ui/` を分離・DI化した中間リファクタリング記録（※ `#014` でTextualネイティブTUIへ完全置換）。 |
+| **#013** | **[013_core_package_refactoring.md](./design/013_core_package_refactoring.md)**<br>Coreパッケージ構造全面リファクタリング | 2026-11-12 | Core / Project | ✅ **実装完了（現行）** | `GenAIClient`・`ChatAgent`・`SearchAgent` 分離、ターン履歴・SHA-256管理 `MaterialStore`・要約圧縮（`context/`）、Skills段階的開示、動的ツール基盤。 |
+| **#014** | **[014_textual_tui_architecture.md](./design/014_textual_tui_architecture.md)**<br>Textual TUI一本化・4層パッケージ再編・画面/操作設計 | 2026-11-17 | App / TUI / CLI | ✅ **実装完了（現行）** | `prompt_toolkit` 廃止とTextual完全一本化、`app`/`tui`/`cli` 再編、最小 `80×24` 対応シングルカラムUI、ユーザー生テキスト表示＋AI Markdown描画、モーダル・ターン中断設計。 |
 
 ---
 
@@ -79,4 +79,4 @@
 | 日付 | 更新者 | ステータス | 変更内容の要約 |
 | :--- | :--- | :--- | :--- |
 | 2026-11-17 | AI Agent | 運用中 | 初版作成。`docs/design/` の3桁連番（`001`〜`013`）およびステータス管理の導入に伴い、`docs/` 全体の目次インデックスとレイヤー別逆引きガイドを整備。 |
-| 2026-11-17 | AI Agent | 運用中 | `#014`（`014_textual_tui_architecture.md`: Textual TUI一本化・4層パッケージ再編・画面/操作設計）を設計書一覧に追加。 |
+| 2026-11-17 | AI Agent | 運用中 | `#014`（`014_textual_tui_architecture.md`）の設計作成および実装完了に伴い、`#014` を `実装完了（現行）`、`#012` を `置換済み（Superseded by #014）` に更新。 |

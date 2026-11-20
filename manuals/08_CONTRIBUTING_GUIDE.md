@@ -21,8 +21,8 @@
    - [3.1 新しいスラッシュコマンドを追加する](#31-新しいスラッシュコマンドを追加する)
    - [3.2 `Project` / `DeveloperProject` に新しいツールを追加する](#32-project--developerproject-に新しいツールを追加する)
    - [3.3 パッケージ標準の組み込みスキル（`builtin/`）を追加する](#33-パッケージ標準の組み込みスキルbuiltinを追加する)
-   - [3.4 UIパネル・対話プロンプトを追加・変更する（4層UI規約）](#34-uiパネル対話プロンプトを追加変更する4層ui規約)
-   - [3.5 先行実装済みのCoreコンテキストAPIをCLI/TUIへ接続する](#35-先行実装済みのcoreコンテキストapiをclituiへ接続する)
+   - [3.4 Textual TUI ウィジェット・モーダル画面を追加・変更する](#34-textual-tui-ウィジェットモーダル画面を追加変更する)
+   - [3.5 先行実装済みのCoreコンテキストAPIをApp/TUIへ接続する](#35-先行実装済みのcoreコンテキストapiをapptuiへ接続する)
 4. [セキュリティ・定数変更時の同期チェックリスト](#4-セキュリティ定数変更時の同期チェックリスト)
 5. [単体テストスイート（`pytest`）の構成とテスト作成ガイド](#5-単体テストスイートpytestの構成とテスト作成ガイド)
    - [5.1 全12テストモジュールの責務一覧](#51-全12テストモジュールの責務一覧)
@@ -82,12 +82,11 @@ pytest  # ホスト側でも docker exec gemio-sandbox pytest でも実行可能
 
 コントリビューション時は、以下のアーキテクチャ制約を必ず守ってください（一部は単体テストで自動検査されています）。
 
-1. **レイヤー単方向依存（`cli` ➔ `project` ➔ `core`）の維持**:
-   * `core` から `project` や `cli` をインポートしてはいけません。
-   * `project` から `cli` をインポートしてはいけません。
-2. **UI依存の完全隔離**:
-   * `core`、`project`、および `src/gemio/__init__.py` に `rich` や `prompt_toolkit` をインポートさせないでください。
-   * `src/gemio/cli/main.py` にも `rich` や `prompt_toolkit` を直接インポートしてはいけません（`test_main_py_has_no_direct_prompt_toolkit_or_rich_imports` で検証）。必ず `GemioUI` インターフェース経由で呼び出してください。
+1. **4層レイヤー単方向依存（`cli` ➔ `tui` ➔ `app` ➔ `project` ➔ `core`）の維持**:
+   * 下位レイヤーから上位レイヤーをインポートしてはいけません。
+2. **UIフレームワーク依存の完全隔離**:
+   * `core`、`project`、`app`、および `src/gemio/__init__.py` に `textual` や `rich` をインポートさせないでください（`test_app_controller_and_commands.py` および `test_cli_main.py` でAST自動検証されています）。
+   * 旧 `prompt_toolkit` への依存は撤去済みのため、再導入しないでください。
 3. **軽量モジュールのSDK非依存**:
    * `src/gemio/core/exceptions.py` と `src/gemio/core/models.py` には `google.genai` をインポートしないでください。
 4. **ローカル物理パスの秘匿**:
@@ -99,20 +98,19 @@ pytest  # ホスト側でも docker exec gemio-sandbox pytest でも実行可能
 
 ## 3. 機能拡張レシピ（How-To ガイド）
 
-### 3.1 新しいスラッシュコマンドを追加する
+### 3.1 新しいスラッシュコマンド・コマンドパレット操作を追加する
 
 例として `/example` コマンドを追加する場合、以下の4ステップで実装します：
 
-1. **純粋パネル生成関数の追加 (`src/gemio/cli/ui/renderables.py`)**:
-   * `build_example_panel(...) -> Panel` を実装します（ここでは `console.print` を呼ばず `Panel` を返します）。
-   * あわせて `build_help_panel()` のコマンド一覧にも `/example` の説明を追記します。
-2. **UIインターフェースと具象実装への追加 (`base.py`, `rich_ui.py`, `ui/__init__.py`)**:
-   * `GemioUI` (`src/gemio/cli/ui/base.py`) に `@abstractmethod def print_example_panel(...) -> None:` を追加します。
-   * `RichConsoleUI` (`src/gemio/cli/ui/rich_ui.py`) で `self.console.print(build_example_panel(...))` を実装します（対話入力を伴う場合は `with self.pause_status():` で囲みます）。
-3. **コマンドハンドラの実装 (`src/gemio/cli/main.py`)**:
-   * `GemioCLI` に `handle_example_command(self, user_input: str) -> None` を実装し、`dispatch_input()` に分岐を追加します。
-4. **単体テストの追加**:
-   * `tests/test_ui_renderables.py`（パネル描画検証）、`tests/test_ui_rich.py`（出力委譲検証）、`tests/test_cli_main.py`（`dispatch_input` 検証）にテストを追加します。
+1. **コマンド構造体とパーサの追加 (`src/gemio/app/commands.py`)**:
+   * `@dataclass(frozen=True) class ExampleCommand:` を定義して `ParsedInput` に加え、`parse_slash_command()` に解析分岐を追加します。
+2. **コントローラのユースケース実装 (`src/gemio/app/controller.py`)**:
+   * UI非依存の型付きメソッド `GemioController.run_example(...)` を実装します。
+3. **TUIアクション・ヘルプ・コマンドパレット連携 (`src/gemio/tui/`)**:
+   * `GemioApp.on_prompt_submitted` (`app.py`) で `ExampleCommand` をハンドリングします（重い処理は必ず `@work(thread=True)` で実行）。
+   * `GemioCommandProvider` (`commands_palette.py`) にエントリを追加して `Ctrl+P` からも呼び出せるようにし、`HelpModal` (`screens/help.py`) のコマンド一覧に説明を追記します。
+4. **単体テスト & ヘッドレスTUIテストの追加**:
+   * `tests/test_app_controller_and_commands.py`（コマンド解析・コントローラ検証）および `tests/test_tui_app.py` / `test_tui_modals.py`（`size=(80, 24)` Pilot検証）にテストを追加します。
 
 ---
 
@@ -143,23 +141,20 @@ pytest  # ホスト側でも docker exec gemio-sandbox pytest でも実行可能
 
 ---
 
-### 3.4 UIパネル・対話プロンプトを追加・変更する（4層UI規約）
+### 3.4 Textual TUI ウィジェット・モーダル画面を追加・変更する
 
-将来の `Textual` TUI 移行を妨げないため、UI変更時は以下のルールを守ってください：
-* **Rich マークアップのエスケープ**: ユーザー入力値、ファイルパス、例外メッセージ、コマンド出力などの動的文字列をマークアップ文字列に埋め込む際は、必ず `from rich.markup import escape` でエスケープしてください（例: `[a]` のような角括弧がマークアップタグと誤認されて消えるバグを防ぎます）。
-* **描画と出力の分離**: 色分けやテーブル構築ロジックはすべて `renderables.py` の `build_*` 関数内に書き、`rich_ui.py` はそれを `self.console.print()` するだけの薄い層に保ちます。
+`src/gemio/tui/` を変更・拡張する際は、以下の設計規約を守ってください：
+* **ユーザー入力のプレーンテキスト表示厳守**: ユーザー入力プロンプト（`UserMessageCard`）や検索クエリ表示、ファイルパス表示などの生テキストには必ず `Static(..., markup=False)` または `rich.text.Text` オブジェクトを使用し、Markdown解釈やマークアップ誤認が起きないようにしてください。一方、AIからの回答（`AssistantMessageCard`）は `Markdown` ウィジェットで描画します。
+* **環境互換性の維持（`80×24`・256色・特殊フォント非依存）**: 最小 `80×24` 端末で見切れないレスポンシブ設計とし、Nerd Fonts 専用アイコンは使用しないでください。また、すべての `ModalScreen` はキーボード操作のみで完結し `Esc` で安全に閉じられるようにしてください。
+* **メインイベントループの非ブロッキング厳守**: API通信や `docker inspect` 等のI/O処理は必ず `@work(thread=True)` で実行し、ワーカースレッドからモーダル確認を行う際は `ThreadModalBridge` (`tui/bridge.py`) を経由してください。
 
 ---
 
-### 3.5 先行実装済みのCoreコンテキストAPIをCLI/TUIへ接続する
+### 3.5 先行実装済みのCoreコンテキストAPIをApp/TUIへ接続する
 
-[`07_ARCHITECTURE_REFERENCE.md` (3.2節)](./07_ARCHITECTURE_REFERENCE.md#32-コンテキストセッション管理-corecontext) に記載の通り、以下の機能はすでに `gemio.core.context` に実装・テスト済みです。今後これらをスラッシュコマンドやTUI操作として公開する際は、以下の設計ルールに従ってください。
+`rewind`（`/rewind`）、`compact`（`/compact`）、および回答コピー（`/copy`, `Ctrl+Y`）はすでに `GemioController` と `GemioApp` に接続済みです。残るユーザー資料管理API等を今後TUIへ公開する際は、以下のセキュリティルールに従ってください。
 
-1. **対話の巻き戻し (`self.chat_session.rewind(steps=1)`)**:
-   * `ChatTurn` 単位で安全に履歴が巻き戻されます（ローカルファイルへの変更自体はGit管理領域の責務であるため、「対話記憶のみを巻き戻した」旨をUIパネルで明示してください）。
-2. **コンテキスト要約圧縮 (`self.chat_session.compact(self.ai_client, keep_recent_turns=2)`)**:
-   * 実行中は `self.ui.thinking_status()` 等のスピナーを表示し、結果（`CompactionResult.compacted`, `summarized_turns`, `retained_turns`）を通知パネルで表示します。
-3. **ユーザー指定ファイルの作業前提資料への追加 (`self.chat_session.materials.add_user_document(...)`)**:
+1. **ユーザー指定ファイルの作業前提資料への追加 (`self.chat_session.materials.add_user_document(...)`)**:
    * **【最重要セキュリティ規約】** ファイルを読み込む際は生で `open()` せず、必ず `self.project.read_file(rel_path)`（または `_verify_and_get_path`）を通して**プロジェクト境界チェックと `.env` 等の機密ファイルブロックを通過**させてください。
    * `MaterialStore` には物理パスを渡さず、`title` にはファイル名のみ（またはユーザー指定ラベル）、`source_hash` には `compute_sha256(正規化相対パス)` でハッシュ化した不透明なダイジェストのみを渡してください。
    * また、この操作は**人間のコマンド/UI操作専用**とし、AIが呼び出せるツール関数として公開しないでください。
@@ -176,7 +171,7 @@ pytest  # ホスト側でも docker exec gemio-sandbox pytest でも実行可能
 | **自動走査除外ディレクトリの追加**<br>(`IGNORED_DIRS`, `IGNORED_DIR_PATTERNS`) | 1. `src/gemio/project/base.py`<br>2. `src/gemio/project/developer.py`（`_collect_local_workspace_raw_entries` 内のスキップ判定確認）<br>3. `tests/test_project_base.py` |
 | **管理・仮想環境ディレクトリの追加**<br>(`SENSITIVE_ENV_DIR_NAMES`) | 1. `src/gemio/project/base.py`<br>2. `src/gemio/project/developer.py`（`classify_workspace_entry` の警告文分岐）<br>3. `manuals/02_DEVELOPER_MODE_MANUAL.md`, `04_SANDBOX_PROTECTION_GUIDELINE.md` |
 | **子プロセス除去環境変数の追加**<br>(`SCRUBBED_ENV_KEYS`, `SCRUBBED_ENV_SUFFIXES`) | 1. `src/gemio/project/developer.py`<br>2. `tests/test_project_developer.py`<br>3. `manuals/02_DEVELOPER_MODE_MANUAL.md` |
-| **AIモデルプリセット・エイリアスの追加・変更**<br>(`DEFAULT_AI_MODEL_NAME`, `MODEL_PRESETS`, `MODEL_ALIASES`) | 1. `src/gemio/core/models.py`<br>2. `src/gemio/cli/ui/renderables.py`（`build_help_panel` 内の例示）<br>3. `tests/test_core_client_and_models.py`, `tests/test_cli_main.py` |
+| **AIモデルプリセット・エイリアスの追加・変更**<br>(`DEFAULT_AI_MODEL_NAME`, `MODEL_PRESETS`, `MODEL_ALIASES`) | 1. `src/gemio/core/models.py`<br>2. `src/gemio/tui/screens/help.py`（ヘルプ内の例示）<br>3. `tests/test_core_client_and_models.py`, `tests/test_tui_modals.py` |
 | **公開コアAPI（新クラス・定数）の追加** | 1. 各サブパッケージの `__init__.py`<br>2. `src/gemio/core/__init__.py` および `src/gemio/__init__.py` (`__all__`) |
 | **バージョン番号の更新（セマンティックバージョニング）** | 1. `pyproject.toml` (`version`)<br>2. `src/gemio/__init__.py` (`__version__`)<br>3. `README.md`（ステータスバッジ・プロトタイプ版表記）<br>4. `tests/test_core_tools_and_prompts.py`（バージョン整合性テスト）<br>5. `docs/PROJECT_SUMMARY.md`（更新履歴へのバージョン記載） |
 
@@ -198,10 +193,10 @@ pytest  # ホスト側でも docker exec gemio-sandbox pytest でも実行可能
 | **Core** | `tests/test_core_agent_search.py` | `SearchAgent` のGoogle検索専用Config、出典抽出・重複排除、ローカル履歴・ユーザー資料の非送信（機密隔離）、連続深掘り検索、通信エラー時のロールバックと `succeeded=False` |
 | **Project** | `tests/test_project_base.py` | ファイル操作一式、パストラバーサル・シンボリックリンク遮断、機密ファイル/ディレクトリ・`.git`・`.devcontainer`・`.gemio`・`*.egg-info` 保護、BFS探索と省略通知、3段階承認、サーキットブレーカー |
 | **Project** | `tests/test_project_developer.py` | コンテナ実体判定、脱獄構成の `SandboxSecurityError` 拒否、環境変数スクラブ、値非保持の機密キー名検出、`parse_proc_mountinfo` / `classify_workspace_entry` / `inspect_sandbox_status`、`run_sandbox_command` 全文表示・タイムアウト・プロセスキル |
-| **CLI** | `tests/test_cli_main.py` | `main.py` のUI直接インポート禁止AST検査、`parse_args`、モック `GemioUI` 注入による起動フロー・全スラッシュコマンド・コールバック・`Ctrl+C` 2段階挙動・`--dynamic-tools`/Skillsリセット連携 |
-| **CLI/UI** | `tests/test_ui_renderables.py` | `format_prompt_header`（モード・トークン閾値色分け）、`classify_agent_log`、全 `build_*_panel` の純粋生成と出力テキスト検証 |
-| **CLI/UI** | `tests/test_ui_prompts.py` | バッファクリア（Undo維持）、キーバインド（`Esc+Enter`, `Esc+Backspace`）、コンテナ用APIキーマスク入力、承認4択・上限継続・`ask_user`・モデル選択プロンプト |
-| **CLI/UI** | `tests/test_ui_rich.py` | `RichConsoleUI` へのカスタム `Console` 注入、スピナーのライフサイクル管理、対話プロンプト呼び出し時の自動 `pause_status()` 動作、ログ分類出力 |
+| **App** | `tests/test_app_controller_and_commands.py` | `app/` のUI非依存AST検査、`AppConfig`、全スラッシュコマンド解析、`GemioController` のAPIキー遅延設定・`SearchOutcome` 4状態判定・安全なターン中断（ロール整合性・プロセスキル） |
+| **TUI** | `tests/test_tui_app.py` | 最小 `80×24` での4ゾーンマウント、`PromptComposer` キー操作・Undo全消去、ユーザー入力の生テキスト保持描画 vs AI回答のMarkdown描画、`ActivityGroup` 折りたたみ、`Esc` ターン中断 |
+| **TUI** | `tests/test_tui_modals.py` | 全9種 `ModalScreen`（`ApprovalModal`, `AskUserModal`, `IterationLimitModal`, `ApiKeyModal`, `TrustConsentModal`, `SandboxStatusModal`, `TokenUsageModal`, `ModelSelectModal`, `HelpModal`）と `Ctrl+P` コマンドパレットの往復検証 |
+| **CLI** | `tests/test_cli_main.py` | コードベースからの `prompt_toolkit` 完全撤去＆トップレベルUI非依存AST検査、`parse_args`、非TTY/不正パス/セキュリティ違反時のプリフライト検証、`GemioApp` 起動・終了コード伝播 |
 
 ---
 
@@ -267,3 +262,4 @@ pytest  # ホスト側でも docker exec gemio-sandbox pytest でも実行可能
 | 2026-11-14 | AI Agent | 運用中 | 初版作成。開発環境構築、アーキテクチャ遵守規約、5つの機能拡張レシピ、セキュリティ同期チェックリスト、全12単体テストモジュールの構成・鉄則、およびドキュメント運用ルールを策定。 |
 | 2026-11-16 | AI Agent | 運用中 | リポジトリ公開に伴うバージョン番号管理・同期チェックリストおよび `PROJECT_SUMMARY.md` へのバージョン記録ルールを追加。 |
 | 2026-11-17 | AI Agent | 運用中 | `docs/design/` のADR型3桁連番管理・新ステータス区分（`実装完了（現行）` / `一部更新` / `置換済み`）および `docs/README.md` インデックス運用ルールを反映。 |
+| 2026-11-17 | AI Agent | 運用中 | Textual TUI 一本化・4層パッケージ再編（`#014` / `v0.2.0`）に伴い、4層単方向依存ルール、スラッシュコマンド＆コマンドパレット拡張手順、TUIウィジェット規約（ユーザー生テキスト表示原則）、および新テストモジュール構成へ更新。 |

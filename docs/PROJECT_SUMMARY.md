@@ -404,3 +404,18 @@
     - `docs/design/` 配下の全13設計書を作成順の `001_web_search.md` 〜 `013_core_package_refactoring.md` へリネームし、現行コードとの整合に応じたステータス更新、後続設計書・現行仕様書への案内注記追加、および設計書間の相互リンク更新を実施。
   - **設計書インデックスの新設とナビゲーション整備 (`docs/README.md`, `README.md`, `manuals/README.md`, `docs/PROJECT_SUMMARY.md`)**:
     - 全設計書・技術資料のステータス一覧とレイヤー別逆引きを備えた `docs/README.md` を新設し、ルート `README.md`・`manuals/README.md` からの導線および本サマリー冒頭の初期構築章に関する参照ガイド注記を追加。
+- **2026年11月17日**: Textual フルスクリーン TUI への完全一本化、4層パッケージ再編（`app` / `tui` / `cli`）、およびマイナーバージョン更新（**`v0.2.0`**）
+  - **UI基盤の Textual 完全一本化と要求システム要件の策定 (`pyproject.toml`, `docs/design/014_textual_tui_architecture.md`)**:
+    - 旧 `rich + prompt_toolkit` ストリーム型コンソールUI（`src/gemio/cli/ui/`）および `prompt_toolkit` 依存を完全撤廃し、Textual ベースのフルスクリーン TUI へ一本化。
+    - 最小 `80×24` 端末・256色互換・特殊フォント非依存・キーボード完結＋マウス操作・OSC 52 クリップボード連携・非TTYプリフライト検証を標準仕様として定義。
+  - **4層アーキテクチャへの再編と第3層 `gemio.app` の新設 (`src/gemio/app/`, `src/gemio/core/`)**:
+    - パッケージ構成を `cli` ➔ `tui` ➔ `app` ➔ `project` ➔ `core` の4層単方向依存へ刷新し、UI非依存の制御層 `src/gemio/app/`（`AppConfig`, `SessionSnapshot`, `SearchOutcome`, `InteractionHandler`, `parse_slash_command`, `GemioController`）を新設。
+    - `ChatAgent` / `SearchAgent` に `cancel_event` 連携を追加し、アプリを終了させずに実行中ターンと稼働中子プロセスのみを安全に停止してロール整合性を維持する `GemioController.cancel_active_execution()` を実装。
+    - Core先行実装機能であった `/copy`（回答コピー）、`/compact`（履歴要約圧縮）、`/rewind`（直近ターン巻き戻し）をコントローラおよびコマンド体系へ統合。
+  - **第4層 `gemio.tui`・`gemio.cli` の構築 (`src/gemio/tui/`, `src/gemio/cli/`)**:
+    - 4ゾーン画面（`StatusHeader`, `ChatTimeline`, `ActivityBar` + `PromptComposer`, `Footer`）と `TurnWidget` を実装。ユーザー入力プロンプト（`UserMessageCard`）および検索クエリは `markup=False` により生テキストをそのまま表示し、AI回答（`AssistantMessageCard`）は `Markdown` レンダリング、途中のツール・思考ログは `ActivityGroup`（`Collapsible`）へ折りたたみ集約。
+    - ワーカースレッドとメインスレッドを安全に仲介する `ThreadModalBridge`、全9種の `ModalScreen`（`ApprovalModal`, `AskUserModal`, `IterationLimitModal`, `SandboxStatusModal`, `TokenUsageModal`, `ModelSelectModal`, `TrustConsentModal`, `ApiKeyModal`, `HelpModal`）、および `Ctrl+P` コマンドパレット（`GemioCommandProvider`）を実装。
+    - `src/gemio/cli/main.py` を TTY・ディレクトリ・サンドボックス事前検証を行う薄いブートストラップ層へ刷新。
+  - **バージョン更新（`v0.1.1` ➔ `v0.2.0`）・ヘッドレスTUIテスト整備・ドキュメント完全同期**:
+    - バージョンを **`v0.2.0`** に更新（`pyproject.toml`, `src/gemio/__init__.py`, `README.md`）。
+    - `tests/test_app_controller_and_commands.py`, `tests/test_tui_app.py`, `tests/test_tui_modals.py`, `tests/test_cli_main.py` を整備して全12テストモジュール・80件の自動テスト合格を確認し、設計書（`#012` 置換ステータス更新、`#014` 実装完了）および `manuals/01`, `07`, `08`, `09` を最新仕様へ同期。
