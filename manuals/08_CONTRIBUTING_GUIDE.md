@@ -173,7 +173,7 @@ pytest  # ホスト側でも docker exec gemio-sandbox pytest でも実行可能
 | **子プロセス除去環境変数の追加**<br>(`SCRUBBED_ENV_KEYS`, `SCRUBBED_ENV_SUFFIXES`) | 1. `src/gemio/project/developer.py`<br>2. `tests/test_project_developer.py`<br>3. `manuals/02_DEVELOPER_MODE_MANUAL.md` |
 | **AIモデルプリセット・エイリアスの追加・変更**<br>(`DEFAULT_AI_MODEL_NAME`, `MODEL_PRESETS`, `MODEL_ALIASES`) | 1. `src/gemio/core/models.py`<br>2. `src/gemio/tui/screens/help.py`（ヘルプ内の例示）<br>3. `tests/test_core_client_and_models.py`, `tests/test_tui_modals.py` |
 | **公開コアAPI（新クラス・定数）の追加** | 1. 各サブパッケージの `__init__.py`<br>2. `src/gemio/core/__init__.py` および `src/gemio/__init__.py` (`__all__`) |
-| **バージョン番号の更新（セマンティックバージョニング）** | 1. `pyproject.toml` (`version`)<br>2. `src/gemio/__init__.py` (`__version__`)<br>3. `README.md`（ステータスバッジ・プロトタイプ版表記）<br>4. `tests/test_core_tools_and_prompts.py`（バージョン整合性テスト）<br>5. `docs/PROJECT_SUMMARY.md`（更新履歴へのバージョン記載） |
+| **バージョン番号の更新（セマンティックバージョニング）** | 1. `pyproject.toml` (`version`)<br>2. `src/gemio/__init__.py` (`__version__`)<br>3. `CHANGELOG.md`（ユーザー向けリリース変更履歴の追記）<br>4. `README.md`（ステータスバッジ・プロトタイプ版表記）<br>5. `tests/test_core_tools_and_prompts.py`（バージョン整合性テスト）<br>6. `docs/PROJECT_SUMMARY.md`（更新履歴へのバージョン記載） |
 
 ---
 

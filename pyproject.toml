@@ -47,6 +47,7 @@ dev = [
 [project.urls]
 Homepage = "https://github.com/koyama-hiro-15/gemio"
 Repository = "https://github.com/koyama-hiro-15/gemio"
+Changelog = "https://github.com/koyama-hiro-15/gemio/blob/main/CHANGELOG.md"
 Issues = "https://github.com/koyama-hiro-15/gemio/issues"
 
 [project.scripts]
