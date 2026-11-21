@@ -79,12 +79,13 @@ class GemioApp(App[int]):
     BINDINGS = [
         Binding("ctrl+q", "quit_app", "終了", priority=True),
         Binding("escape", "cancel_turn", "中断", show=False),
-        Binding("ctrl+y", "copy_last_response", "回答コピー"),
+        Binding("ctrl+y", "copy_last_response", "回答コピー", priority=True),
         Binding("pageup", "scroll_timeline_up", "ログ上へ", show=False, priority=True),
         Binding("pagedown", "scroll_timeline_down", "ログ下へ", show=False, priority=True),
         Binding("f1", "show_help", "ヘルプ"),
         Binding("f2", "select_model", "モデル"),
         Binding("f3", "cycle_approval", "承認切替"),
+        Binding("f4", "focus_composer", "入力欄"),
     ]
 
     def __init__(
@@ -675,12 +676,20 @@ class GemioApp(App[int]):
 
     def action_copy_last_response(self) -> None:
         """直近のAI回答をクリップボードへコピーします。"""
+        if len(self.screen_stack) > 1:
+            return
         last_resp = self.controller.get_last_assistant_response()
         if not last_resp:
             self.notify("コピー可能な直近のAI回答がありません。", severity="warning")
             return
         self.copy_to_clipboard(last_resp)
         self.notify("直近のAI回答をクリップボードにコピーしました。")
+
+    def action_focus_composer(self) -> None:
+        """プロンプト入力エディタへフォーカスを移動します。"""
+        if len(self.screen_stack) > 1:
+            return
+        self.composer.focus_editor()
 
     def action_scroll_timeline_up(self) -> None:
         """入力欄にフォーカスしたままタイムラインを1ページ上へスクロールします。"""

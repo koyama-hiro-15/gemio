@@ -50,11 +50,11 @@ class WelcomeBanner(Static):
         body.append(f"{snap.current_model}\n\n")
 
         body.append(
-            "  送信: Ctrl+J / Alt+Enter  |  改行: Enter  |  クリア: Alt+Backspace  |  中断: Esc\n",
+            "  送信: Ctrl+J  |  改行: Enter  |  全選択・消去: F7 ➔ Backspace  |  中断: Esc\n",
             style="dim",
         )
         body.append(
-            "  コマンド検索: Ctrl+P  |  ヘルプ: F1 (/help)  |  トークン: /tokens  |  診断: /sandbox",
+            "  入力欄へ移動: F4  |  コマンド検索: Ctrl+P  |  ヘルプ: F1 (/help)  |  トークン: /tokens",
             style="dim",
         )
         self.update(body)

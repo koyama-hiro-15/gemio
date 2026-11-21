@@ -47,7 +47,7 @@ class _DummyApprovalModal(ModalScreen[str]):
 async def test_tui_layout_80x24_and_composer_keybindings(tmp_path):
     """
     最小画面サイズ (80x24) で4ゾーンすべてが正常にマウントされ、
-    PromptTextArea の初期フォーカスおよび Alt+Backspace (Undo可能全消去) が動作すること
+    F7->Backspace (全選択消去・Undo可能) および F4 (エディタへフォーカス移動) が動作すること
     """
     cfg = AppConfig(project_path=tmp_path)
     with patch("gemio.core.client.genai.Client"):
@@ -61,6 +61,10 @@ async def test_tui_layout_80x24_and_composer_keybindings(tmp_path):
             assert app.query_one(PromptComposer) is not None
             assert app.query_one(Footer) is not None
 
+            # フッター表示用の F4 バインディングが登録されていること
+            f4_bindings = [b for b in app.BINDINGS if b.key == "f4" and b.show]
+            assert len(f4_bindings) == 1
+
             editor = app.composer.editor
             assert app.focused is editor
 
@@ -68,14 +72,24 @@ async def test_tui_layout_80x24_and_composer_keybindings(tmp_path):
             await pilot.pause()
             assert "1行目のテキスト" in editor.text
 
-            # Alt+Backspace で一括全消去され、Undo で元に戻せること
-            await pilot.press("alt+backspace")
+            # Textual標準の F7 (全選択) -> Backspace で一括消去され、Ctrl+Z で元に戻せること
+            await pilot.press("f7")
+            await pilot.press("backspace")
             await pilot.pause()
             assert editor.text == ""
 
-            editor.undo()
+            await pilot.press("ctrl+z")
             await pilot.pause()
             assert editor.text == "1行目のテキスト\n2行目のテキスト"
+
+            # タイムラインへフォーカスを移した後、F4 でエディタへ戻れること
+            app.timeline.focus()
+            await pilot.pause()
+            assert app.focused is app.timeline
+
+            await pilot.press("f4")
+            await pilot.pause()
+            assert app.focused is editor
 
 
 async def test_user_prompt_renders_raw_plain_text_while_assistant_renders_markdown_and_tools_collapse(
@@ -146,9 +160,15 @@ async def test_user_prompt_renders_raw_plain_text_while_assistant_renders_markdo
                 assert turn_w.assistant_card.display is True
                 assert turn_w.assistant_card.response_text == "確認結果: **すべて正常** です。"
 
+                # エディタにフォーカスがある状態でも Ctrl+Y で直近回答がコピーされること
+                with patch.object(app, "copy_to_clipboard") as mock_copy:
+                    await pilot.press("ctrl+y")
+                    await pilot.pause()
+                    mock_copy.assert_called_once_with("確認結果: **すべて正常** です。")
+
                 # /rewind コマンドで末尾 TurnWidget が除去されること
                 app.composer.editor.insert("/rewind")
-                await pilot.press("alt+enter")
+                await pilot.press("ctrl+j")
                 await pilot.pause()
                 assert len(list(app.timeline.query(TurnWidget))) == 0
 

@@ -15,7 +15,7 @@ from gemio.tui.messages import CancelTurnRequested, PromptSubmitted
 
 _SPINNER_FRAMES = ("|", "/", "-", "\\")
 _IDLE_GUIDE_TEXT = (
-    "Ready — Ctrl+J / Alt+Enter: 送信 | Enter: 改行 | Alt+Backspace: 全消去 | PageUp/Down: ログスクロール"
+    "Ready — Ctrl+J: 送信 | Enter: 改行 | F7→BS: 全消去 | F4: 入力欄 | PageUp/Down: スクロール"
 )
 # PromptTextArea は border: tall により上下2行の枠を消費するため、
 # height=3 が内寸1行、height=8 が内寸6行に対応する。
@@ -113,7 +113,7 @@ class ActivityBar(Widget):
 
 class PromptTextArea(TextArea):
     """
-    Ctrl+J / Alt+Enter 送信、Alt+Backspace (Undo可能) 全クリア、および自動高さ伸縮を備えた入力エディタ。
+    Ctrl+J 送信、Enter 改行、および自動高さ伸縮を備えたクロスプラットフォーム対応入力エディタ。
     """
 
     def __init__(self, *, id: str | None = None) -> None:
@@ -151,18 +151,12 @@ class PromptTextArea(TextArea):
         self._sync_auto_height()
 
     async def _on_key(self, event: events.Key) -> None:
-        if event.key in {"ctrl+j", "alt+enter"}:
+        if event.key == "ctrl+j":
             event.stop()
             event.prevent_default()
             raw = self.text
             if raw.strip():
                 self.post_message(PromptSubmitted(raw))
-            return
-
-        if event.key == "alt+backspace":
-            event.stop()
-            event.prevent_default()
-            self.clear_undoable()
             return
 
         await super()._on_key(event)

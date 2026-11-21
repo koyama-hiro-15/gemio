@@ -342,3 +342,69 @@ async def test_help_model_tokens_modals_and_command_palette(tmp_path):
             assert isinstance(app.screen, CommandPalette)
             await pilot.press("escape")
             await pilot.pause()
+
+
+async def test_modals_fit_content_height_and_keep_buttons_visible(tmp_path):
+    """
+    大画面 (100x48) ではダイアログが画面全体に無駄に引き伸ばされず表示内容の高さに収まり、
+    最小画面 (80x24) でもすべてのダイアログで下部ボタン行が領域内に収まること
+    """
+    dev_small = {
+        "is_dev_mode": True,
+        "execution_mode": "in_container",
+        "workspace_dir": "/app",
+        "workspace_rw": True,
+        "user": {"user_str": "uid=1000", "is_root": False},
+        "network": {"mode": "none", "is_isolated": True},
+        "resources": {
+            "readonly_rootfs": True,
+            "memory_limit": "2G",
+            "cpus": "2",
+            "pids_limit": "128",
+        },
+        "sensitive_env_keys": [],
+        "entries": [
+            {
+                "name": "a.py",
+                "perms": "-rw-r--r--",
+                "uid": 1000,
+                "gid": 1000,
+                "size": 10,
+                "mount_source": "ws",
+                "mount_mode": "rw",
+                "risk_level": "normal",
+                "status_label": "ok",
+            }
+        ],
+        "warnings": [],
+    }
+
+    for size in ((80, 24), (100, 48)):
+        cfg = AppConfig(project_path=tmp_path)
+        with patch("gemio.core.client.genai.Client"):
+            ctrl = GemioController(cfg)
+            app = GemioApp(ctrl)
+            async with app.run_test(size=size) as pilot:
+                modals = [
+                    ApprovalModal("write_file: a.py"),
+                    AskUserModal("続行しますか？", ["はい", "いいえ"]),
+                    IterationLimitModal(),
+                    TrustConsentModal(),
+                    ApiKeyModal(),
+                    ModelSelectModal("gemini-flash-latest"),
+                    SandboxStatusModal(ctrl.inspect_sandbox()),
+                    SandboxStatusModal(dev_small),
+                    TokenUsageModal(ctrl.get_token_usage()),
+                    HelpModal(),
+                ]
+                for modal in modals:
+                    app.push_screen(modal)
+                    await pilot.pause()
+                    dlg = modal.query_one("Vertical")
+                    btns = modal.query_one(".modal-buttons")
+                    assert dlg.region.contains_region(btns.region)
+                    if size == (100, 48) and not isinstance(modal, HelpModal):
+                        # 内容が少ないダイアログが大画面一杯(92%=44行)に引き伸ばされていないこと
+                        assert dlg.region.height <= 26
+                    modal.dismiss(None)
+                    await pilot.pause()

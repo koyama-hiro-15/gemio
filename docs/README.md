@@ -1,7 +1,7 @@
 # 🗂️ Gemio 設計書・技術ドキュメント一覧（インデックス）
 
 **作成日:** 2026年11月17日  
-**最終更新日:** 2026年11月17日  
+**最終更新日:** 2026年11月21日  
 **ステータス:** 運用中  
 **対象範囲:** `docs/` 配下の設計書（`design/`）、技術調査資料（`tech_docs/`）、運用ルール、および開発履歴サマリー  
 
@@ -56,10 +56,11 @@
 
 ## 🔬 2. 技術調査資料・セキュリティリファレンス一覧（`docs/tech_docs/`）
 
-サンドボックス設計の根拠となる技術調査およびセキュリティ境界の整理資料です。
+外部SDK仕様、サンドボックス設計の根拠となる技術調査、およびセキュリティ境界の整理資料です。
 
 | ファイル | ステータス | 内容の要約 |
 | :--- | :---: | :--- |
+| **[google_genai_models_reference.md](./tech_docs/google_genai_models_reference.md)**<br>🤖 Google GenAI SDK モデル情報取得・機能判定リファレンス | 技術資料 | `google-genai` SDK の `models.list()` / `models.get()` の仕様・取得フィールド整理、テキスト生成モデル抽出および Thinking 対応判定のサンプルコード集。 |
 | **[sandbox_security_responsibility_matrix.md](./tech_docs/sandbox_security_responsibility_matrix.md)**<br>🛡️ サンドボックスのセキュリティ境界と責任分界点 | 技術資料（運用中） | Gemio本体（Python側ガードレール）で保証される安全性と、Dockerコンテナ設定（OS・ランタイム層）で確保すべき安全性の責任分界点マトリクス。 |
 | **[agent_sandbox_and_container_architecture.md](./tech_docs/agent_sandbox_and_container_architecture.md)**<br>🏗️ AIエージェントの設計思想とサンドボックス構造 | 技術資料 | AIコーディングエージェントの基本設計思想、OSネイティブ隔離とDocker隔離の比較、I/O最適化、脅威モデルと堅牢化ベストプラクティス。 |
 | **[dev_containers_reference.md](./tech_docs/dev_containers_reference.md)**<br>📦 Dev Containers 技術資料＆AI実践ガイド | 技術資料 | Development Containers 仕様の内部メカニズムと、自律型AIエージェントの実行基盤として活用する際の構築・運用ガイド。 |
@@ -80,3 +81,4 @@
 | :--- | :--- | :--- | :--- |
 | 2026-11-17 | AI Agent | 運用中 | 初版作成。`docs/design/` の3桁連番（`001`〜`013`）およびステータス管理の導入に伴い、`docs/` 全体の目次インデックスとレイヤー別逆引きガイドを整備。 |
 | 2026-11-17 | AI Agent | 運用中 | `#014`（`014_textual_tui_architecture.md`）の設計作成および実装完了に伴い、`#014` を `実装完了（現行）`、`#012` を `置換済み（Superseded by #014）` に更新。 |
+| 2026-11-21 | AI Agent | 運用中 | `docs/tech_docs/google_genai_models_reference.md` の追加に伴い、技術調査資料一覧テーブルを更新。 |
