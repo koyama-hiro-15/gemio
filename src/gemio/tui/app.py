@@ -79,7 +79,6 @@ class GemioApp(App[int]):
     BINDINGS = [
         Binding("ctrl+q", "quit_app", "終了", priority=True),
         Binding("escape", "cancel_turn", "中断", show=False),
-        Binding("ctrl+y", "copy_last_response", "回答コピー", priority=True),
         Binding("pageup", "scroll_timeline_up", "ログ上へ", show=False, priority=True),
         Binding("pagedown", "scroll_timeline_down", "ログ下へ", show=False, priority=True),
         Binding("f1", "show_help", "ヘルプ"),
@@ -714,7 +713,17 @@ class GemioApp(App[int]):
     def action_select_model(self) -> None:
         """モデル選択モーダルを開きます。"""
         self.push_screen(
-            ModelSelectModal(self.controller.current_model),
+            ModelSelectModal(
+                self.controller.current_model,
+                models=self.controller.get_cached_models(),
+                fetch_callback=lambda force: self.controller.fetch_available_models(
+                    force_refresh=force
+                ),
+                auto_fetch=(
+                    self.controller.is_client_ready
+                    and not self.controller.has_cached_models
+                ),
+            ),
             callback=self._on_model_selected,
         )
 

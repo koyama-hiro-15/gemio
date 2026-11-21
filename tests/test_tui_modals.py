@@ -408,3 +408,60 @@ async def test_modals_fit_content_height_and_keep_buttons_visible(tmp_path):
                         assert dlg.region.height <= 26
                     modal.dismiss(None)
                     await pilot.pause()
+
+
+async def test_model_select_modal_fetches_dynamic_catalog_with_thinking_and_context_badges(
+    tmp_path,
+):
+    """
+    F2 (ModelSelectModal) が API の models.list() から動的モデル一覧・Thinking有無・入力トークン上限を取得し、
+    OptionList を更新して選択適用できること
+    """
+    from textual.widgets import OptionList
+
+    cfg = AppConfig(project_path=tmp_path)
+    with patch("gemio.core.client.genai.Client") as mock_sdk_cls:
+        mock_sdk = MagicMock()
+        mock_sdk_cls.return_value = mock_sdk
+        mock_sdk.models.list.return_value = [
+            types.Model(
+                name="models/gemini-2.5-pro",
+                display_name="Gemini 2.5 Pro",
+                description="Advanced reasoning model",
+                supported_actions=["generateContent"],
+                thinking=True,
+                input_token_limit=1_048_576,
+            ),
+            types.Model(
+                name="models/gemini-2.0-flash",
+                display_name="Gemini 2.0 Flash",
+                description="Fast standard model",
+                supported_actions=["generateContent"],
+                thinking=False,
+                input_token_limit=1_048_576,
+            ),
+        ]
+
+        ctrl = GemioController(cfg)
+        app = GemioApp(ctrl)
+
+        async with app.run_test(size=(90, 28)) as pilot:
+            await pilot.press("f2")
+            for _ in range(30):
+                await pilot.pause(0.02)
+                if ctrl.has_cached_models:
+                    break
+            await pilot.pause()
+
+            assert isinstance(app.screen, ModelSelectModal)
+            opt_list = app.screen.query_one("#model-option-list", OptionList)
+            assert opt_list.option_count == 2
+            first_prompt_plain = str(opt_list.get_option_at_index(0).prompt)
+            assert "gemini-2.5-pro" in first_prompt_plain
+            assert "[Think]" in first_prompt_plain
+            assert "[1M]" in first_prompt_plain
+
+            # '1' キーで動的取得した gemini-2.5-pro へ切り替えられること
+            await pilot.press("1")
+            await pilot.pause()
+            assert ctrl.current_model == "gemini-2.5-pro"

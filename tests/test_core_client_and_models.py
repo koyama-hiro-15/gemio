@@ -145,3 +145,149 @@ def test_token_usage_tracker_separates_chat_search_and_compaction_sources():
     assert snap3["compaction_api_calls"] == 1
     assert snap3["total_api_calls"] == 3
     assert snap3["cumulative_total_tokens"] == 2800 + 700 + 2100
+
+
+def test_models_module_has_no_sdk_dependency_and_filters_text_and_thinking_models():
+    """
+    1. core/models.py が google.genai 等の外部SDKに依存しないこと
+    2. ModelInfo 変換、テキスト生成モデル抽出フィルタ（TTS/Image/Embedding除外）、
+       および Thinking 対応の厳密判定（MagicMock 耐性含む）が正確に動作すること
+    """
+    import ast
+    from pathlib import Path
+
+    from gemio.core.models import (
+        ModelInfo,
+        is_text_generation_model,
+        is_thinking_supported,
+        model_info_from_sdk,
+        normalize_model_id,
+    )
+
+    models_py = Path(__file__).resolve().parent.parent / "src" / "gemio" / "core" / "models.py"
+    tree = ast.parse(models_py.read_text(encoding="utf-8"))
+    imported_roots: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imported_roots.add(alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported_roots.add(node.module.split(".")[0])
+    assert "google" not in imported_roots
+
+    assert normalize_model_id("models/gemini-2.5-flash") == "gemini-2.5-flash"
+    assert (
+        normalize_model_id("publishers/google/models/gemini-2.5-pro")
+        == "gemini-2.5-pro"
+    )
+    assert resolve_model_name("models/gemini-2.5-flash") == "gemini-2.5-flash"
+
+    m_text_think = SimpleNamespace(
+        name="models/gemini-2.5-flash",
+        display_name="Gemini 2.5 Flash",
+        description="Fast thinking model",
+        supported_actions=["generateContent", "countTokens"],
+        thinking=True,
+        input_token_limit=1_048_576,
+        output_token_limit=65_536,
+    )
+    m_embed = SimpleNamespace(
+        name="models/text-embedding-004",
+        supported_actions=["embedContent"],
+        thinking=False,
+    )
+    m_tts = SimpleNamespace(
+        name="models/gemini-2.5-flash-preview-tts",
+        supported_actions=["generateContent"],
+        thinking=False,
+    )
+    m_image = SimpleNamespace(
+        name="models/gemini-2.5-flash-image-generation",
+        supported_actions=["generateContent"],
+        thinking=False,
+    )
+
+    assert is_text_generation_model(m_text_think) is True
+    assert is_text_generation_model(m_embed) is False
+    assert is_text_generation_model(m_tts) is False
+    assert is_text_generation_model(m_image) is False
+    assert is_text_generation_model(MagicMock()) is False
+
+    assert is_thinking_supported(m_text_think) is True
+    assert is_thinking_supported(m_embed) is False
+    assert is_thinking_supported(SimpleNamespace(thinking=None)) is False
+    assert is_thinking_supported(MagicMock()) is False
+
+    info: ModelInfo = model_info_from_sdk(m_text_think)
+    assert info.model_id == "gemini-2.5-flash"
+    assert info.supports_thinking is True
+    assert info.format_context_limit() == "1M"
+
+
+def test_genai_client_dynamic_model_catalog_caching_and_thinking_fallback():
+    """
+    1. list_available_models() がテキスト生成モデルのみを抽出し、個別キャッシュにも登録すること
+    2. supports_thinking() がキャッシュを利用して重複APIコールを行わないこと
+    3. ThinkingConfig が万一 400 エラーで拒否された際に自動で設定を外して再試行すること
+    """
+    from google.genai import types
+
+    with patch("google.genai.Client") as mock_sdk_cls:
+        mock_sdk = MagicMock()
+        mock_sdk_cls.return_value = mock_sdk
+
+        mock_sdk.models.list.return_value = [
+            types.Model(
+                name="models/gemini-2.5-pro",
+                display_name="Gemini 2.5 Pro",
+                supported_actions=["generateContent"],
+                thinking=True,
+                input_token_limit=1_048_576,
+            ),
+            types.Model(
+                name="models/gemini-2.0-flash-lite",
+                display_name="Gemini 2.0 Flash Lite",
+                supported_actions=["generateContent"],
+                thinking=False,
+                input_token_limit=1_048_576,
+            ),
+            types.Model(
+                name="models/gemini-tts",
+                supported_actions=["generateContent"],
+                thinking=False,
+            ),
+            types.Model(
+                name="models/embedding-001",
+                supported_actions=["embedContent"],
+            ),
+        ]
+
+        client = GenAIClient(model_name="gemini-2.5-pro")
+        catalog = client.list_available_models()
+        ids = [m.model_id for m in catalog]
+        assert ids == ["gemini-2.5-pro", "gemini-2.0-flash-lite"]
+        assert mock_sdk.models.list.call_count == 1
+
+        # キャッシュ済みのため再度の list() や models.get() なしで判定できること
+        assert client.list_available_models() == catalog
+        assert mock_sdk.models.list.call_count == 1
+        assert client.supports_thinking("gemini-2.5-pro") is True
+        assert client.supports_thinking("gemini-2.0-flash-lite") is False
+        assert mock_sdk.models.get.call_count == 0
+
+        # 万一 ThinkingConfig 指定で 400 INVALID_ARGUMENT が返った場合、自動で外して成功すること
+        ok_resp = MagicMock(text="フォールバック応答", usage_metadata=None)
+        mock_sdk.models.generate_content.side_effect = [
+            Exception("400 INVALID_ARGUMENT: Thinking config is not supported for this model"),
+            ok_resp,
+        ]
+        res = client.generate_content(
+            contents=["hi"],
+            config={"thinking_config": types.ThinkingConfig(include_thoughts=True)},
+        )
+        assert res is ok_resp
+        assert mock_sdk.models.generate_content.call_count == 2
+        second_cfg = mock_sdk.models.generate_content.call_args_list[1].kwargs["config"]
+        assert "thinking_config" not in second_cfg
+        # 以降は自動的に Thinking 無効として記録されること
+        assert client.supports_thinking("gemini-2.5-pro") is False

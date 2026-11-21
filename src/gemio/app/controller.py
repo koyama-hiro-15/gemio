@@ -22,7 +22,11 @@ from gemio.core.context import (
     CompactionResult,
     MaterialKind,
 )
-from gemio.core.models import resolve_model_name
+from gemio.core.models import (
+    ModelInfo,
+    get_fallback_model_catalog,
+    resolve_model_name,
+)
 from gemio.core.prompts import DEFAULT_SEARCH_INSTRUCTION, SystemPromptComposer
 from gemio.core.search import SearchAgent
 from gemio.core.skills import SkillLoader, SkillManager, SkillSpec
@@ -379,6 +383,38 @@ class GemioController:
             self.project.set_trust_mode(False)
             return False, True
         return self.project.trust_mode, False
+
+    @property
+    def has_cached_models(self) -> bool:
+        """APIからモデル一覧を一度でも取得・キャッシュ済みかどうかを返します。"""
+        return (
+            self.ai_client is not None
+            and self.ai_client.get_cached_models() is not None
+        )
+
+    def get_cached_models(self) -> list[ModelInfo]:
+        """
+        通信を行わず即座に利用可能なモデル一覧（キャッシュ未取得時はフォールバック一覧）を返します。
+        """
+        if self.ai_client is not None:
+            cached = self.ai_client.get_cached_models()
+            if cached is not None:
+                return cached
+        return get_fallback_model_catalog()
+
+    def fetch_available_models(self, *, force_refresh: bool = False) -> list[ModelInfo]:
+        """
+        API からテキスト生成対応モデルの一覧とスペックを取得し、キャッシュを更新して返します。
+        """
+        if self.ai_client is not None:
+            return self.ai_client.list_available_models(force_refresh=force_refresh)
+        return get_fallback_model_catalog()
+
+    def get_current_model_info(self) -> ModelInfo | None:
+        """現在のAIモデルに関するキャッシュ済みスペック情報があれば返します。"""
+        if self.ai_client is not None:
+            return self.ai_client.get_cached_model_info(self.current_model)
+        return None
 
     def set_model(self, model_name_or_alias: str) -> str:
         """使用するAIモデルを切り替え、解決後のモデル名を返します。"""

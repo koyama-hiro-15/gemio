@@ -1,68 +1,166 @@
 """
 AI モデル選択モーダル（ModelSelectModal）モジュール。
+
+キャッシュ済みまたは標準フォールバック一覧を待ち時間ゼロで即時表示しつつ、
+バックグラウンドで API から最新のテキスト生成モデル一覧・Thinking対応可否・コンテキスト上限を取得して更新できます。
 """
 
+from typing import Callable
+
 from rich.text import Text
-from textual import events
+from textual import events, work
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, OptionList, Static
 from textual.widgets.option_list import Option
 
-from gemio.core.models import MODEL_PRESETS, resolve_model_name
+from gemio.core.models import (
+    ModelInfo,
+    get_fallback_model_catalog,
+    resolve_model_name,
+)
 
 
 class ModelSelectModal(ModalScreen[str | None]):
-    """プリセットモデル一覧からの選択またはエイリアス直接指定を行うモーダル画面。"""
+    """利用可能モデル一覧（動的カタログ対応）からの選択またはエイリアス直接指定を行うモーダル画面。"""
 
-    def __init__(self, current_model: str) -> None:
+    def __init__(
+        self,
+        current_model: str,
+        models: list[ModelInfo] | None = None,
+        *,
+        fetch_callback: Callable[[bool], list[ModelInfo]] | None = None,
+        auto_fetch: bool = False,
+    ) -> None:
         super().__init__()
-        self.current_model = current_model
+        self.current_model: str = current_model
+        self._models: list[ModelInfo] = (
+            list(models) if models is not None else get_fallback_model_catalog()
+        )
+        self._fetch_callback = fetch_callback
+        self._auto_fetch: bool = auto_fetch
+
+    def _build_option(self, idx: int, info: ModelInfo) -> Option:
+        line = Text()
+        marker = "* " if info.model_id == self.current_model else "  "
+        line.append(marker, style="bold green")
+        if idx <= 9:
+            line.append(f"[{idx}] ", style="bold cyan")
+        else:
+            line.append("    ")
+        line.append(info.model_id, style="bold")
+
+        if info.supports_thinking:
+            line.append(" [Think]", style="bold magenta")
+        ctx_str = info.format_context_limit()
+        if ctx_str:
+            line.append(f" [{ctx_str}]", style="cyan")
+
+        desc = info.description or info.display_name
+        if desc:
+            first_line = desc.splitlines()[0].strip()
+            if len(first_line) > 46:
+                first_line = first_line[:45] + "…"
+            line.append(f" - {first_line}", style="dim")
+
+        return Option(line, id=f"model-idx-{idx - 1}")
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="modal-dialog"):
             yield Static(
                 f"AIモデル選択 (現在: {self.current_model})",
                 markup=False,
+                id="model-modal-title",
                 classes="modal-title",
             )
 
-            options: list[Option] = []
-            for idx, (m_name, m_desc) in enumerate(MODEL_PRESETS, 1):
-                line = Text()
-                marker = "* " if m_name == self.current_model else "  "
-                line.append(marker, style="bold green")
-                line.append(f"[{idx}] ", style="bold cyan")
-                line.append(m_name, style="bold")
-                line.append(f" - {m_desc}", style="dim")
-                options.append(Option(line, id=f"preset-{idx - 1}"))
-
+            options = [
+                self._build_option(idx, info)
+                for idx, info in enumerate(self._models, 1)
+            ]
             yield OptionList(
                 *options,
                 id="model-option-list",
                 classes="modal-option-list",
             )
             yield Input(
-                placeholder="またはモデル名・エイリアス (argon, 3.8, lite 等) を直接入力して Enter...",
+                placeholder="またはモデル名・エイリアス (flash, argon, lite 等) を直接入力して Enter...",
                 id="model-custom-input",
             )
+            hint = (
+                "数字(1-9)またはEnterで選択 / RでAPI一覧更新 / Tabで直接入力 / Escでキャンセル"
+                if self._fetch_callback is not None
+                else "数字キー(1-9)またはEnterで選択 / Tabで直接入力欄へ移動 / Escでキャンセル"
+            )
             yield Static(
-                "数字キー(1-9)またはEnterで選択 / Tabで直接入力欄へ移動 / Escでキャンセル",
+                hint,
                 markup=False,
+                id="model-modal-hint",
                 classes="modal-hint",
             )
             with Horizontal(classes="modal-buttons"):
-                yield Button("直接指定を適用", id="btn-apply-custom", variant="primary", compact=True)
-                yield Button("キャンセル (Esc)", id="btn-cancel", variant="default", compact=True)
+                if self._fetch_callback is not None:
+                    yield Button(
+                        "一覧更新 (R)",
+                        id="btn-refresh",
+                        variant="default",
+                        compact=True,
+                    )
+                yield Button(
+                    "直接指定を適用",
+                    id="btn-apply-custom",
+                    variant="primary",
+                    compact=True,
+                )
+                yield Button(
+                    "キャンセル (Esc)",
+                    id="btn-cancel",
+                    variant="default",
+                    compact=True,
+                )
 
     def on_mount(self) -> None:
+        self._highlight_current_model()
+        self.query_one("#model-option-list", OptionList).focus()
+        if self._auto_fetch and self._fetch_callback is not None:
+            self._refresh_models_in_thread(force_refresh=False)
+
+    def _highlight_current_model(self) -> None:
         opt_list = self.query_one("#model-option-list", OptionList)
-        for idx, (m_name, _) in enumerate(MODEL_PRESETS):
-            if m_name == self.current_model:
+        for idx, info in enumerate(self._models):
+            if info.model_id == self.current_model:
                 opt_list.highlighted = idx
                 break
-        opt_list.focus()
+
+    @work(thread=True, exclusive=True, group="model_catalog_fetch")
+    def _refresh_models_in_thread(self, force_refresh: bool = True) -> None:
+        if self._fetch_callback is None:
+            return
+        try:
+            fetched = self._fetch_callback(force_refresh)
+        except Exception:
+            return
+        if self.app is not None and self.is_mounted:
+            try:
+                self.app.call_from_thread(self._apply_fetched_models, fetched)
+            except Exception:
+                pass
+
+    def _apply_fetched_models(self, models: list[ModelInfo]) -> None:
+        if not self.is_mounted or not models:
+            return
+        self._models = list(models)
+        opt_list = self.query_one("#model-option-list", OptionList)
+        opt_list.clear_options()
+        opt_list.add_options(
+            [self._build_option(idx, info) for idx, info in enumerate(self._models, 1)]
+        )
+        self._highlight_current_model()
+        title_w = self.query_one("#model-modal-title", Static)
+        title_w.update(
+            f"AIモデル選択 (現在: {self.current_model} / 利用可能: {len(self._models)}件)"
+        )
 
     def on_option_list_option_selected(
         self,
@@ -70,10 +168,10 @@ class ModelSelectModal(ModalScreen[str | None]):
     ) -> None:
         event.stop()
         opt_id = event.option.id or ""
-        if opt_id.startswith("preset-"):
-            idx = int(opt_id.split("-", 1)[1])
-            if 0 <= idx < len(MODEL_PRESETS):
-                self.dismiss(MODEL_PRESETS[idx][0])
+        if opt_id.startswith("model-idx-"):
+            idx = int(opt_id.split("model-idx-", 1)[1])
+            if 0 <= idx < len(self._models):
+                self.dismiss(self._models[idx].model_id)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         event.stop()
@@ -91,16 +189,24 @@ class ModelSelectModal(ModalScreen[str | None]):
         if self.focused is custom_input:
             return
 
+        lowered = event.key.lower()
+        if lowered == "r" and self._fetch_callback is not None:
+            event.stop()
+            self._refresh_models_in_thread(force_refresh=True)
+            return
+
         if event.key.isdigit():
             idx = int(event.key) - 1
-            if 0 <= idx < len(MODEL_PRESETS):
+            if 0 <= idx < len(self._models):
                 event.stop()
-                self.dismiss(MODEL_PRESETS[idx][0])
+                self.dismiss(self._models[idx].model_id)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         event.stop()
         if event.button.id == "btn-cancel":
             self.dismiss(None)
+        elif event.button.id == "btn-refresh":
+            self._refresh_models_in_thread(force_refresh=True)
         elif event.button.id == "btn-apply-custom":
             raw = self.query_one("#model-custom-input", Input).value.strip()
             if raw:

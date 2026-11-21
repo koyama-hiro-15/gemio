@@ -107,8 +107,8 @@ class ChatAgent:
         return self.prompt_composer.compose()
 
     def _build_generation_config(self) -> dict[str, Any]:
-        """現在のイテレーション時点におけるシステムインストラクションと有効ツールから生成設定を構築します。"""
-        return {
+        """現在のイテレーション時点におけるシステムインストラクション・有効ツール・Thinking設定から生成設定を構築します。"""
+        config: dict[str, Any] = {
             "response_mime_type": "text/plain",
             "tools": self.tool_provider.get_active_tools(),
             "system_instruction": self.prompt_composer.compose(),
@@ -117,6 +117,9 @@ class ChatAgent:
                 disable=True
             ),
         }
+        if self.client.supports_thinking():
+            config["thinking_config"] = types.ThinkingConfig(include_thoughts=True)
+        return config
 
     def get_token_usage(self) -> dict[str, int]:
         """現在のコンテキスト量・累積トークン量・履歴メッセージ数・前提資料件数の辞書を返します。"""
@@ -248,7 +251,16 @@ class ChatAgent:
                 abort_text = self._emit_turn_cancelled_log(on_log_append)
                 return True, abort_text, executed_calls, True
 
-            turn_thoughts.extend(self._extract_thoughts(response))
+            extracted_thoughts = self._extract_thoughts(response)
+            if extracted_thoughts:
+                turn_thoughts.extend(extracted_thoughts)
+                thought_ts = get_now_time_text()
+                for thought_text in extracted_thoughts:
+                    emit_agent_log(
+                        on_log_append,
+                        f"{thought_ts}\n{thought_text}",
+                        AgentLogCategory.THOUGHT,
+                    )
 
             if response.function_calls:
                 turn_contents.append(response.candidates[0].content)

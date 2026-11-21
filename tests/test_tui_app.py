@@ -82,6 +82,11 @@ async def test_tui_layout_80x24_and_composer_keybindings(tmp_path):
             await pilot.pause()
             assert editor.text == "1行目のテキスト\n2行目のテキスト"
 
+            # Ctrl+Y がエディタの Redo として衝突なく動作すること
+            await pilot.press("ctrl+y")
+            await pilot.pause()
+            assert editor.text == ""
+
             # タイムラインへフォーカスを移した後、F4 でエディタへ戻れること
             app.timeline.focus()
             await pilot.pause()
@@ -160,9 +165,10 @@ async def test_user_prompt_renders_raw_plain_text_while_assistant_renders_markdo
                 assert turn_w.assistant_card.display is True
                 assert turn_w.assistant_card.response_text == "確認結果: **すべて正常** です。"
 
-                # エディタにフォーカスがある状態でも Ctrl+Y で直近回答がコピーされること
+                # /cp (/copy) コマンドで直近回答がコピーされること
                 with patch.object(app, "copy_to_clipboard") as mock_copy:
-                    await pilot.press("ctrl+y")
+                    app.composer.editor.insert("/cp")
+                    await pilot.press("ctrl+j")
                     await pilot.pause()
                     mock_copy.assert_called_once_with("確認結果: **すべて正常** です。")
 
@@ -395,3 +401,57 @@ async def test_phase1_layout_header_copy_buttons_collapsible_and_composer_height
             await pilot.pause()
             assert ed.region.height == 5
             assert ed.content_region.height == 3
+
+
+async def test_thinking_model_enables_thoughts_and_displays_in_activity_group(tmp_path):
+    """
+    models.get() で thinking=True と判定されたモデルでは ThinkingConfig(include_thoughts=True) が付与され、
+    抽出された思考テキストが重複なく ActivityGroup に表示されること
+    """
+    cfg = AppConfig(project_path=tmp_path)
+    with patch("gemio.core.client.genai.Client") as mock_sdk_cls:
+        mock_sdk = MagicMock()
+        mock_sdk_cls.return_value = mock_sdk
+        mock_sdk.models.get.return_value = types.Model(
+            name="models/gemini-2.5-flash",
+            display_name="Gemini 2.5 Flash",
+            supported_actions=["generateContent"],
+            thinking=True,
+            input_token_limit=1_048_576,
+        )
+
+        resp = types.GenerateContentResponse(
+            candidates=[
+                types.Candidate(
+                    content=types.Content(
+                        role="model",
+                        parts=[
+                            types.Part(text="問題を段階的に整理します。", thought=True),
+                            types.Part(text="最終的な結論です。"),
+                        ],
+                    )
+                )
+            ]
+        )
+        mock_sdk.models.generate_content.return_value = resp
+
+        ctrl = GemioController(cfg)
+        app = GemioApp(ctrl)
+        async with app.run_test(size=(80, 24)) as pilot:
+            app.composer.editor.insert("推論テスト")
+            await pilot.press("ctrl+j")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            gen_cfg = mock_sdk.models.generate_content.call_args.kwargs["config"]
+            assert "thinking_config" in gen_cfg
+            assert gen_cfg["thinking_config"].include_thoughts is True
+
+            turns = list(app.timeline.query(TurnWidget))
+            assert len(turns) == 1
+            ag = turns[0].activity_group
+            assert ag.display is True
+            assert ag.thought_count == 1
+            col = ag.query_one(Collapsible)
+            assert "Thinking (1)" in str(col.title)
+            assert turns[0].assistant_card.response_text == "最終的な結論です。"

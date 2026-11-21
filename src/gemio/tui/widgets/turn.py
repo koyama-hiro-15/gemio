@@ -182,19 +182,37 @@ class ActivityGroup(Widget):
 
         self._append_activity_line(line)
 
+    def add_thought(self, timestamp: str, body: str) -> None:
+        """逐次取得された思考テキスト（Thinking）を1件ずつリアルタイムで展開領域へ追加します。"""
+        cleaned = body.strip()
+        if not cleaned:
+            return
+        self.display = True
+        self.thought_count += 1
+
+        line = Text()
+        if timestamp:
+            line.append(f"[{timestamp}] ", style="dim")
+        line.append(f"[Thinking #{self.thought_count}] ", style="bold magenta")
+        line.append(cleaned, style="dim")
+        self._append_activity_line(line)
+
     def set_thoughts(self, thoughts: list[str]) -> None:
-        """ターン完了時に取得された思考テキスト（Thinking）を展開領域へ追加します。"""
+        """ターン完了時に未表示分の思考テキスト（Thinking）を展開領域へ補完追加します。"""
         if self._thoughts_added:
             return
         valid = [t.strip() for t in thoughts if t and t.strip()]
         if not valid:
             return
         self._thoughts_added = True
+        remaining = valid[self.thought_count :]
+        if not remaining:
+            return
         self.display = True
-        self.thought_count = len(valid)
-        for idx, thought_text in enumerate(valid, 1):
+        for thought_text in remaining:
+            self.thought_count += 1
             line = Text()
-            line.append(f"[Thinking #{idx}] ", style="bold magenta")
+            line.append(f"[Thinking #{self.thought_count}] ", style="bold magenta")
             line.append(thought_text, style="dim")
             self._append_activity_line(line)
 
@@ -320,6 +338,9 @@ class TurnWidget(Widget):
             return None
         if category == AgentLogCategory.TOOL:
             return self.activity_group.add_tool_call(ts, body)
+        if category == AgentLogCategory.THOUGHT:
+            self.activity_group.add_thought(ts, body)
+            return None
         if category == AgentLogCategory.WARNING:
             self.activity_group.add_warning(ts, body)
             return None

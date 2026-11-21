@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Callable
 
 from textual.command import DiscoveryHit, Hit, Hits, Provider
 
-from gemio.core.models import MODEL_PRESETS
+
 
 if TYPE_CHECKING:
     from gemio.tui.app import GemioApp
@@ -94,12 +94,19 @@ class GemioCommandProvider(Provider):
             ),
         ]
 
-        for m_name, m_desc in MODEL_PRESETS:
+        for info in app.controller.get_cached_models():
+            tags: list[str] = []
+            if info.supports_thinking:
+                tags.append("Thinking対応")
+            ctx = info.format_context_limit()
+            if ctx:
+                tags.append(f"Ctx:{ctx}")
+            tag_prefix = f"[{' / '.join(tags)}] " if tags else ""
             items.append(
                 (
-                    f"Model Switch: {m_name}",
-                    f"AIモデルを {m_name} ({m_desc}) に即時変更します",
-                    partial(app._switch_model_directly, m_name),
+                    f"Model Switch: {info.model_id}",
+                    f"AIモデルを {info.model_id} ({tag_prefix}{info.summary_label()}) に即時変更します",
+                    partial(app._switch_model_directly, info.model_id),
                 )
             )
 
