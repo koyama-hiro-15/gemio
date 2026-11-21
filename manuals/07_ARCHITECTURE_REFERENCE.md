@@ -1,7 +1,7 @@
 # 🏗️ Gemio アーキテクチャ & 内部仕様リファレンスマニュアル
 
 **作成日:** 2026年11月14日  
-**最終更新日:** 2026年11月17日  
+**最終更新日:** 2026年11月21日  
 **ステータス:** 運用中  
 **対象システム:** Gemio 全パッケージ (`src/gemio/core/`, `src/gemio/project/`, `src/gemio/app/`, `src/gemio/tui/`, `src/gemio/cli/`, `src/gemio/__init__.py`)  
 
@@ -165,7 +165,7 @@ gemio/
 │   ├── core/                            # 【コア層】通信・コンテキスト・エージェント・Skills・Tools
 │   │   ├── __init__.py
 │   │   ├── exceptions.py                # 共通例外 (AgentExecutionAborted) ※SDK非依存
-│   │   ├── models.py                    # モデル定義・エイリアス・閾値・AgentLogCategory ※SDK非依存
+│   │   ├── models.py                    # ModelInfo・モデル抽出判定・エイリアス・閾値・AgentLogCategory ※SDK非依存
 │   │   ├── client.py                    # GenAIClient & TokenUsageTracker
 │   │   ├── prompts.py                   # システムプロンプト定数 & SystemPromptComposer
 │   │   ├── agent.py                     # ChatAgent (通常対話 & Function Calling ループ)
@@ -222,8 +222,8 @@ gemio/
 | レイヤー | モジュールパス | 主要クラス / 関数 | 主な責務 |
 | :--- | :--- | :--- | :--- |
 | **Core** | `core/exceptions.py` | `AgentExecutionAborted` | Abort選択・サーキットブレーカー発動時の作業ループ強制遮断例外 |
-| **Core** | `core/models.py` | `MODEL_PRESETS`, `resolve_model_name`, `AgentLogCategory` | モデルプリセット・エイリアス解決、コンテキスト警告閾値、ログ種別定数 |
-| **Core** | `core/client.py` | `GenAIClient`, `TokenUsageTracker` | `google-genai` クライアント管理、503/429等の指数バックオフリトライ、ソース別トークン集計 |
+| **Core** | `core/models.py` | `ModelInfo`, `is_text_generation_model`, `resolve_model_name`, `AgentLogCategory` | モデルスペック構造体、テキスト生成/Thinking対応判定、エイリアス解決、ログ種別定数 |
+| **Core** | `core/client.py` | `GenAIClient`, `TokenUsageTracker` | `google-genai` クライアント管理、動的モデルカタログ・スペックキャッシュ、指数バックオフリトライ、ソース別トークン集計 |
 | **Core** | `core/prompts.py` | `SystemPromptComposer`, `DEFAULT_SYSTEM_INSTRUCTION` | 汎用基本ルール・追加ルールセクション・動的ツールカタログ・Skills手順の動的合成 |
 | **Core** | `core/agent.py` | `ChatAgent`, `ChatTurnResult`, `emit_agent_log` | 通常対話・Function Callingループ、エラー回復、上限継続確認、`cancel_event` 安全中断、ターン記録 |
 | **Core** | `core/search.py` | `SearchAgent`, `SearchResult` | 隔離コンテキストでのGoogle Search Grounding実行、出典抽出・重複排除、`cancel_event` 安全中断 |
@@ -255,8 +255,11 @@ gemio/
 
 #### `GenAIClient` (`src/gemio/core/client.py`)
 * `google.genai.Client` の生成を1箇所に集約します。`api_key` が明示指定された場合（`in_container` 起動時のマスク入力）は環境変数を介さず `genai.Client(api_key=api_key)` で初期化します。
-* **自動リトライ制御 (`generate_content`)**:
+* **動的モデルカタログ & スペックキャッシュ (`list_available_models`, `get_model_info`, `supports_thinking`)**:
+  * `models.list` / `models.get`（`v1beta` 優先参照＋フォールバック）により、テキスト生成対応モデル一覧や Thinking 対応可否・最大入出力トークン上限を `ModelInfo` としてセッション内キャッシュします（オフライン時・モック環境時は `get_fallback_model_catalog()` を使用）。
+* **自動リトライ制御 & Thinking フォールバック (`generate_content`)**:
   * リトライ対象: HTTP `429`, `500`, `502`, `503`, `504`、`ConnectionError`、`TimeoutError`、`OSError`、およびレート制限・過負荷系エラー文字列（`400`〜`499` のクライアントエラーは即時送出）。
+  * Thinking 設定フォールバック: 万一 `ThinkingConfig` 指定時に非対応モデル起因の `400` 系エラーが返った場合、自動で該当モデルの Thinking を無効化して設定を除去し再試行します。
   * バックオフ仕様: デフォルト最大 `3` 回、`2.0秒 ➔ 4.0秒 ➔ 8.0秒` ＋ ランダムジッター（最低待機 `1.0秒`）。待機時は `on_retry_warning` コールバックへ通知します。
 * **`TokenUsageTracker` によるソース別集計**:
   * `record(response, source="chat" | "search" | "compaction")` により、呼び出し元ごとのAPIコール回数と累積トークン（`prompt`, `candidates`, `thoughts`, `cached`, `tool_use`, `total`）を加算します。
@@ -274,7 +277,7 @@ gemio/
 | `ChatHistory.append_turn` / `to_contents` / `clear` | ターン単位の履歴蓄積・API用展開・全消去 | ✅ **接続済**（通常対話・`/clear`） |
 | `MaterialStore.add_search_result` / `clear` / `format_for_prompt` | Web検索資料のSHA-256重複排除蓄積・破棄・先頭注入 | ✅ **接続済**（`/search`・`/search --clear`・`/clear --all`） |
 | `ChatHistory.rewind(steps)` | Function Calling整合性を壊さないターン単位の巻き戻し | ✅ **接続済**（`/rewind`・コマンドパレット） |
-| `ChatHistory.get_last_response_text` / カードコピー | 入力プロンプト・AI回答テキストの取得・コピー | ✅ **接続済**（`/copy`・`Ctrl+Y`・各カード `[Copy]`） |
+| `ChatHistory.get_last_response_text` / カードコピー | 入力プロンプト・AI回答テキストの取得・コピー | ✅ **接続済**（`/copy`・各カード `[Copy]`・コマンドパレット） |
 | `ContextCompactor.compact` / `ChatSession.compact` | 古い対話ターン群をLLMで4項目構造化サマリへ圧縮置換 | ✅ **接続済**（`/compact`・コマンドパレット） |
 | `MaterialStore.add_user_document` / `remove` / `format_for_display` | ユーザー指定資料の追加（`source_hash` 更新対応）・個別削除・一覧表示 | 🔧 **Core実装済（TUI未接続）** |
 | `ChatSession.export_context_markdown` | 前提資料＋要約＋選択ターンの一括Markdownエクスポート | 🔧 **Core実装済（TUI未接続）** |
@@ -291,8 +294,8 @@ gemio/
 
 #### `ChatAgent` (`src/gemio/core/agent.py`)
 * `automatic_function_calling` を明示的に無効化（`disable=True`）し、自前の `_execute_agent_loop` でツール呼び出しを制御します。
-* **毎イテレーション動的評価**:
-  ループの各ステップ先頭で `self.prompt_composer.compose()` と `self.tool_provider.get_active_tools()` を呼び出して `config` を再構築します。これにより、ループ途中でAIが `activate_skill` や `request_tools` を実行すると、**次のAPIコール（直後のイテレーション）から即座に新しい手順やツールスキーマが有効化**されます。
+* **毎イテレーション動的評価 & Thinking 自動有効化**:
+  ループの各ステップ先頭で `self.prompt_composer.compose()` と `self.tool_provider.get_active_tools()` を呼び出して `config` を再構築し、あわせて `self.client.supports_thinking()` が `True` のモデルに対しては `ThinkingConfig(include_thoughts=True)` を動的付与します。取得された思考テキストは `AgentLogCategory.THOUGHT` として即時送出されます。これにより、ループ途中の `activate_skill` や `request_tools`、モデル切替が直後のイテレーションから即座に反映されます。
 * **ロール整合性の徹底保護（400 Bad Request 防止）**:
   1. **サーバーエラー中断時**: ツール実行後にAPIリトライ上限で失敗した場合、実行済みの `function_response` は破棄せず保持したまま、末尾に中断案内の `role="model"` テキスト応答を補完して `ChatTurn(aborted=True)` として確定保存します。
   2. **`AgentExecutionAborted` 発生時（Abort選択 / サーキットブレーカー発動）**: モデルが1ターンに複数の `function_call`（例: `[call_1, call_2, call_3]`）を返し、`call_1` で Abort が発生した場合、`call_1` に `[ABORTED]` 応答を付与するだけでなく、**未実行の後続 `call_2`, `call_3` に対してもスキップ通知の `function_response` を自動付与**してからループを抜けます（Gemini APIの「`function_call` の数と `function_response` の数が一致しなければならない」制約を守るため）。
@@ -410,8 +413,8 @@ gemio/
      * **`UserMessageCard`**: `Static(..., markup=False)` により Markdown・Richマークアップを一切解釈せず、**入力されたプロンプト・記号・インデントを生テキストのまま正確に表示**します。
      * **`ActivityGroup`**: ツール呼び出し・リトライ警告・思考テキストを `Collapsible` で折りたたみ集約します。
      * **`AssistantMessageCard`**: Textual `Markdown` ウィジェットでリッチ描画します。
-  3. `ActivityBar` + `PromptComposer`: ASCIIスピナー・経過秒数・`[Esc: ターン中断]` と、自動高さ伸縮（3〜8行）・`Ctrl+J`/`Alt+Enter` 送信・`Alt+Backspace` Undo可能全消去を備えた入力欄。
-  4. `Footer`: キーバインド表示および `GemioCommandProvider`（`Ctrl+P` コマンドパレット）連携。
+  3. `ActivityBar` + `PromptComposer`: ASCIIスピナー・経過秒数・`[Esc: ターン中断]` と、改行・折り返し連動の自動高さ伸縮（3〜8行）・`Ctrl+J` 送信・`Enter` 改行・標準 `F7`➔`Backspace` 全消去・`Ctrl+Z`/`Ctrl+Y` Undo/Redoを備えた入力欄。
+  4. `Footer`: キーバインド表示（`F1`:ヘルプ / `F2`:モデル / `F3`:承認切替 / `F4`:入力欄 / `^Q`:終了）および `GemioCommandProvider`（`Ctrl+P` コマンドパレット）連携。
 * **`ThreadModalBridge` (`bridge.py`) と全9種 `ModalScreen` (`screens/`)**:
   * 重い AI 通信・検索・`/sandbox` 診断はすべて `@work(thread=True)` ワーカースレッド上で実行します。
   * ワーカースレッドからの承認要求・`ask_user`・上限確認時は、`ThreadModalBridge` が `app.call_from_thread` ＋ `threading.Event` でメインスレッドに `ApprovalModal` / `AskUserModal` / `IterationLimitModal` をプッシュし、メインイベントループを一切ブロックせずにユーザーの選択結果を返します。
@@ -477,7 +480,7 @@ PromptSubmitted ➔ GemioApp._start_chat_worker()
 * **アプリケーション制御 (`app`)**: `AppConfig`, `AppStartupError`, `GemioController`, `InteractionHandler`, `SessionSnapshot`, `SearchOutcome`, `parse_slash_command`, `validate_project_dir`, `APP_DEFAULT_MAX_ITERATIONS`, `APP_SEARCH_GUIDANCE_INSTRUCTION`
 * **エージェント & クライアント**: `GenAIClient`, `TokenUsageTracker`, `ChatAgent`, `ChatTurnResult`, `SearchAgent`, `SearchResult`
 * **コンテキスト & セッション**: `ChatSession`, `ChatHistory`, `ChatTurn`, `MaterialStore`, `ReferenceMaterial`, `MaterialKind`, `ContextCompactor`, `CompactionResult`, `compute_sha256`
-* **プロンプト & モデル設定**: `SystemPromptComposer`, `DEFAULT_SYSTEM_INSTRUCTION`, `DEFAULT_SEARCH_INSTRUCTION`, `DEFAULT_COMPACTION_INSTRUCTION`, `PROJECT_SYSTEM_INSTRUCTION`, `DEVELOPER_PROJECT_INSTRUCTION`, `DEFAULT_AI_MODEL_NAME`, `MODEL_PRESETS`, `MODEL_ALIASES`, `resolve_model_name`, `AgentLogCategory`
+* **プロンプト & モデル設定**: `SystemPromptComposer`, `DEFAULT_SYSTEM_INSTRUCTION`, `DEFAULT_SEARCH_INSTRUCTION`, `DEFAULT_COMPACTION_INSTRUCTION`, `PROJECT_SYSTEM_INSTRUCTION`, `DEVELOPER_PROJECT_INSTRUCTION`, `DEFAULT_AI_MODEL_NAME`, `MODEL_PRESETS`, `MODEL_ALIASES`, `ModelInfo`, `normalize_model_id`, `resolve_model_name`, `is_text_generation_model`, `is_thinking_supported`, `model_info_from_sdk`, `get_fallback_model_catalog`, `sort_model_catalog`, `AgentLogCategory`
 * **Skills & ツール基盤**: `SkillLoader`, `SkillManager`, `SkillSpec`, `parse_skill_markdown`, `ToolRegistry`, `Toolset`, `ToolSpec`, `ToolProvider`, `StaticToolProvider`, `DynamicToolsetProvider`, `get_builtin_toolset`, `load_project_toolsets`, `agent_tools`, `get_current_date`, `get_current_time`
 * **プロジェクト & セキュリティ**: `Project`, `DeveloperProject`, `APPROVAL_MODE_NORMAL`, `APPROVAL_MODE_EDIT`, `APPROVAL_MODE_TRUST`, `AgentExecutionAborted`, `SandboxSecurityError`, `scrub_environment`, `is_sensitive_env_key`, `truncate_command_output`, `summarize_text_for_display`
 
@@ -552,3 +555,4 @@ finally:
 | 2026-11-14 | AI Agent | 運用中 | 初版作成。3層レイヤー構造、全モジュール責務マップ、`core` / `project` / `cli` の詳細仕様、CLI接続状態マトリクス、主要シーケンス、公開ライブラリAPIを体系化。 |
 | 2026-11-16 | AI Agent | 運用中 | システムインストラクションの3層責務分離（`project/prompts.py`, `cli/prompts.py` の新設、`Project.get_system_instruction()` の導入、`core` からの `dev_mode` 廃止）および `__version__`（`v0.1.1`）公開APIを反映。 |
 | 2026-11-17 | AI Agent | 運用中 | Textual TUI 一本化・4層パッケージ再編（`#014` / `v0.2.0`）に伴い、4層単方向依存（`cli` ➔ `tui` ➔ `app` ➔ `project` ➔ `core`）、`GemioController`、`GemioApp` / `ThreadModalBridge` / 9種モーダル、安全なターン中断、および公開APIを更新。 |
+| 2026-11-21 | AI Agent | 運用中 | 動的モデルカタログ・スペックキャッシュと Thinking 自動統合（`#015`：`ModelInfo`、`GenAIClient.list_available_models` / `supports_thinking`、`AgentLogCategory.THOUGHT`、`ModelSelectModal` 動的更新）およびクロスプラットフォーム向けキーバインド刷新（`Ctrl+J`送信・`F4`入力欄移動・`Ctrl+Y` Redo維持）を反映。 |

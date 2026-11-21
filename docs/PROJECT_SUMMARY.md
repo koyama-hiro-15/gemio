@@ -419,3 +419,15 @@
   - **バージョン更新（`v0.1.1` ➔ `v0.2.0`）・ヘッドレスTUIテスト整備・ドキュメント完全同期**:
     - バージョンを **`v0.2.0`** に更新（`pyproject.toml`, `src/gemio/__init__.py`, `README.md`）。
     - `tests/test_app_controller_and_commands.py`, `tests/test_tui_app.py`, `tests/test_tui_modals.py`, `tests/test_cli_main.py` を整備して全12テストモジュール・80件の自動テスト合格を確認し、設計書（`#012` 置換ステータス更新、`#014` 実装完了）および `manuals/01`, `07`, `08`, `09` を最新仕様へ同期。
+- **2026年11月21日**: Textual TUI レイアウト・キーバインド改善、および動的モデルカタログ・Thinking（思考ログ）統合（`v0.2.0` / 設計書 `#015`）
+  - **TUI レイアウト崩れ・自動高さ調整の修正 (`src/gemio/tui/styles/app.tcss`, `src/gemio/tui/widgets/composer.py`)**:
+    - `StatusHeader` の全ステータスバッジ表示、対話カード・検索カード右上の `[Copy]` ボタン表示、および `HelpModal` の「閉じる」ボタン表示が画面外へ押し出されていた CSS レイアウト不具合を修正。
+    - `PromptTextArea` のボーダー高さ（2行分）およびソフトラップ行数を考慮した自動伸縮計算へ修正し、1行目改行時から即座にエディタが伸長するように改善。
+    - `ActivityGroup`（折りたたみログ）展開時の高さ、および全9種 `ModalScreen` のダイアログ高さを表示内容の行数に合わせてフィットさせるよう最適化（最小 `80×24` でも下部ボタンが隠れないことを自動テストで保証）。
+  - **クロスプラットフォーム向けキーバインド刷新 (`src/gemio/tui/app.py`, `composer.py`, `welcome.py`, `screens/help.py`)**:
+    - Windows Terminal 等で衝突する `Alt+Enter`（送信）および `Alt+Backspace`（全消去）の独自割り当てを撤廃し、`Ctrl+J` 送信 / `Enter` 改行 / `F7`➔`Backspace` 全消去に統一。
+    - プロンプトエディタへフォーカスを戻す `F4` ショートカットをフッターに追加し、`Ctrl+Y` はエディタ標準の Redo を維持して回答コピーを `[Copy]` ボタン・`/copy` (`/cp`)・コマンドパレットへ集約。
+  - **動的モデルカタログ・スペック取得基盤と Thinking 思考ログ統合 (`docs/design/015_dynamic_model_catalog_and_thinking.md`, `core/`, `app/`, `tui/`)**:
+    - `core/models.py`（SDK非依存維持）に `ModelInfo`、テキスト生成モデル抽出フィルタ（`is_text_generation_model`）、Thinking 対応判定（`is_thinking_supported`）、および `AgentLogCategory.THOUGHT` を実装。
+    - `GenAIClient` に `models.list()` / `models.get()`（`v1beta` 優先＋フォールバック）を用いたセッション内モデルキャッシュ基盤と、Thinking 対応モデルでの自動 `ThinkingConfig(include_thoughts=True)` 付与（万一の400エラー時自動解除フォールバック付き）を実装。
+    - `ChatAgent` から思考テキストを逐次通知して `ActivityGroup` へリアルタイム表示するよう統合し、`ModelSelectModal`（`F2` / `/model`）およびコマンドパレットで API モデル一覧・`[Think]` バッジ・最大コンテキスト長を動的表示できるよう刷新（全86テスト合格）。

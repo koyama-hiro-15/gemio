@@ -1,7 +1,7 @@
 # 🛠️ Gemio コントリビューション & 拡張開発ガイド
 
 **作成日:** 2026年11月14日  
-**最終更新日:** 2026年11月17日  
+**最終更新日:** 2026年11月21日  
 **ステータス:** 運用中  
 **対象システム:** Gemio リポジトリ全体 (`src/gemio/`, `tests/`, `manuals/`, `docs/`, `Dockerfile`, `compose.yaml`)  
 
@@ -152,7 +152,7 @@ pytest  # ホスト側でも docker exec gemio-sandbox pytest でも実行可能
 
 ### 3.5 先行実装済みのCoreコンテキストAPIをApp/TUIへ接続する
 
-`rewind`（`/rewind`）、`compact`（`/compact`）、および回答コピー（`/copy`, `Ctrl+Y`）はすでに `GemioController` と `GemioApp` に接続済みです。残るユーザー資料管理API等を今後TUIへ公開する際は、以下のセキュリティルールに従ってください。
+`rewind`（`/rewind`）、`compact`（`/compact`）、および回答コピー（`/copy`、各カードの `[Copy]` ボタン、コマンドパレット）はすでに `GemioController` と `GemioApp` に接続済みです。残るユーザー資料管理API等を今後TUIへ公開する際は、以下のセキュリティルールに従ってください。
 
 1. **ユーザー指定ファイルの作業前提資料への追加 (`self.chat_session.materials.add_user_document(...)`)**:
    * **【最重要セキュリティ規約】** ファイルを読み込む際は生で `open()` せず、必ず `self.project.read_file(rel_path)`（または `_verify_and_get_path`）を通して**プロジェクト境界チェックと `.env` 等の機密ファイルブロックを通過**させてください。
@@ -185,7 +185,7 @@ pytest  # ホスト側でも docker exec gemio-sandbox pytest でも実行可能
 
 | レイヤー | テストファイル | 主な検証内容 |
 | :--- | :--- | :--- |
-| **Core** | `tests/test_core_client_and_models.py` | モデル名・エイリアス解決、`GenAIClient` の初期化・モデル切替・503リトライ回復、`TokenUsageTracker` の `chat`/`search`/`compaction` 分離集計 |
+| **Core** | `tests/test_core_client_and_models.py` | `ModelInfo`・テキスト生成/Thinking対応判定・エイリアス解決、`GenAIClient` の動的モデルカタログキャッシュ・Thinking 400フォールバック・503リトライ回復、`TokenUsageTracker` の分離集計 |
 | **Core** | `tests/test_core_context.py` | `ChatTurn` 履歴管理・`rewind`・範囲抽出・Markdown整形、`MaterialStore` の物理パス非保持・SHA-256重複排除・`source_hash` 更新、`ContextCompactor`、`ChatSession` 先頭注入 |
 | **Core** | `tests/test_core_tools_and_prompts.py` | 標準日時ツール、`ToolRegistry` / `StaticToolProvider`、`.gemio/tools/` ローダーと物理パス秘匿、`agent_tools` と `agent_toolsets` の一致検証、`SystemPromptComposer` |
 | **Core** | `tests/test_core_skills_and_dynamic_tools.py` | `parse_skill_markdown`、固定2箇所からの `SkillLoader`・優先上書き・遅延ロード例外時のパス秘匿、`DynamicToolsetProvider` (`request_tools`) と `activate_skill` のループ途中即時反映 |
@@ -263,3 +263,4 @@ pytest  # ホスト側でも docker exec gemio-sandbox pytest でも実行可能
 | 2026-11-16 | AI Agent | 運用中 | リポジトリ公開に伴うバージョン番号管理・同期チェックリストおよび `PROJECT_SUMMARY.md` へのバージョン記録ルールを追加。 |
 | 2026-11-17 | AI Agent | 運用中 | `docs/design/` のADR型3桁連番管理・新ステータス区分（`実装完了（現行）` / `一部更新` / `置換済み`）および `docs/README.md` インデックス運用ルールを反映。 |
 | 2026-11-17 | AI Agent | 運用中 | Textual TUI 一本化・4層パッケージ再編（`#014` / `v0.2.0`）に伴い、4層単方向依存ルール、スラッシュコマンド＆コマンドパレット拡張手順、TUIウィジェット規約（ユーザー生テキスト表示原則）、および新テストモジュール構成へ更新。 |
+| 2026-11-21 | AI Agent | 運用中 | 動的モデルカタログ・Thinking統合（`#015`）および回答コピー操作の整理（`Ctrl+Y` を Redo 維持とし `/copy`・`[Copy]` ボタンへ集約）に伴い該当記載を更新。 |
