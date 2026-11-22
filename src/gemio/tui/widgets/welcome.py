@@ -44,7 +44,10 @@ class WelcomeBanner(Static):
             appr_style = "bold yellow"
         else:
             appr_style = "bold green"
-        body.append(f"{snap.approval_display_label}\n", style=appr_style)
+        body.append(f"{snap.approval_display_label}", style=appr_style)
+        body.append("  |  ", style="dim")
+        web_style = "bold cyan" if snap.web_search_enabled else "dim"
+        body.append(f"{snap.web_display_label}\n", style=web_style)
 
         body.append("  Model   : ", style="bold cyan")
         body.append(f"{snap.current_model}\n\n")

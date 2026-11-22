@@ -57,6 +57,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="[Experimental] 動的ツールセット機能（AIからのツール要求によるオンデマンド有効化）を使用します",
     )
+    parser.add_argument(
+        "--no-web-search",
+        action="store_true",
+        help="AIによるWeb検索ツール（+WEB）を初期状態で無効化（-WEB）して起動します",
+    )
     return parser.parse_args(argv)
 
 

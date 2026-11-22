@@ -67,6 +67,14 @@ def test_tool_registry_and_static_provider_execution():
     unknown_res = provider.execute("missing_tool", {})
     assert "[ERROR]" in unknown_res and "missing_tool" in unknown_res
 
+    # Toolset.enabled = False に切り替えると有効一覧から外れ、実行時は無効化中メッセージが返ること
+    crypto_ts = registry.get_toolset("crypto")
+    assert crypto_ts is not None
+    crypto_ts.enabled = False
+    assert [fn.__name__ for fn in provider.get_active_tools()] == ["meta_helper"]
+    disabled_res = provider.execute("calc_checksum", {"text": "abc"})
+    assert "[ERROR]" in disabled_res and "無効化" in disabled_res
+
 
 def test_load_project_toolsets_fixed_directory_and_path_privacy(tmp_path):
     """

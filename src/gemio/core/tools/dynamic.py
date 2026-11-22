@@ -30,16 +30,22 @@ class DynamicToolsetProvider(ToolProvider):
         self._request_tool_fn = self._create_request_tools_callable()
 
     def _has_on_demand_tools(self) -> bool:
-        """常時有効（always_active=True）以外のオンデマンドツールが存在するかを返します。"""
-        return any(not ts.always_active for ts in self.registry.list_toolsets())
+        """有効（enabled=True）かつ常時有効（always_active=True）以外のオンデマンドツールが存在するかを返します。"""
+        return any(
+            ts.enabled and not ts.always_active
+            for ts in self.registry.list_toolsets()
+        )
 
     def _is_toolset_active(self, toolset_name: str) -> bool:
         ts = self.registry.get_toolset(toolset_name)
-        if ts is None:
+        if ts is None or not ts.enabled:
             return False
         return ts.always_active or (toolset_name in self._active_toolsets)
 
     def _is_spec_active(self, tool_name: str, toolset_name: str) -> bool:
+        ts = self.registry.get_toolset(toolset_name)
+        if ts is None or not ts.enabled:
+            return False
         return self._is_toolset_active(toolset_name) or (
             tool_name in self._active_tools
         )
@@ -50,7 +56,7 @@ class DynamicToolsetProvider(ToolProvider):
         for raw_name in toolset_names:
             clean_name = raw_name.strip()
             ts = self.registry.get_toolset(clean_name)
-            if ts is not None:
+            if ts is not None and ts.enabled:
                 self._active_toolsets.add(ts.name)
                 for spec in ts.tools:
                     if spec.name not in activated_tools:
@@ -83,7 +89,9 @@ class DynamicToolsetProvider(ToolProvider):
 
             if not req_ts and not req_fn:
                 available_ts = [
-                    ts.name for ts in self.registry.list_toolsets() if not ts.always_active
+                    ts.name
+                    for ts in self.registry.list_toolsets()
+                    if ts.enabled and not ts.always_active
                 ]
                 return (
                     "[ERROR] 有効化する `toolsets` または `tool_names` を1つ以上指定してください。"
@@ -91,12 +99,16 @@ class DynamicToolsetProvider(ToolProvider):
                 )
 
             newly_enabled: list[str] = []
+            disabled_targets: list[str] = []
             unknown_targets: list[str] = []
 
             for ts_name in req_ts:
                 ts = self.registry.get_toolset(ts_name)
                 if ts is None:
                     unknown_targets.append(f"toolset:{ts_name}")
+                    continue
+                if not ts.enabled:
+                    disabled_targets.append(f"toolset:{ts_name}")
                     continue
                 self._active_toolsets.add(ts.name)
                 for spec in ts.tools:
@@ -108,6 +120,10 @@ class DynamicToolsetProvider(ToolProvider):
                 if spec is None:
                     unknown_targets.append(f"tool:{fname}")
                     continue
+                parent_ts = self.registry.get_toolset(spec.toolset)
+                if parent_ts is not None and not parent_ts.enabled:
+                    disabled_targets.append(f"tool:{fname}")
+                    continue
                 self._active_tools.add(spec.name)
                 if spec.name not in newly_enabled:
                     newly_enabled.append(spec.name)
@@ -118,8 +134,14 @@ class DynamicToolsetProvider(ToolProvider):
                     f"成功: 以下のツールを有効化しました: {', '.join(newly_enabled)}。"
                     "次のステップから直接呼び出し可能です。"
                 )
+            if disabled_targets:
+                messages.append(
+                    f"現在ユーザー設定により無効化されているためスキップしました: {', '.join(disabled_targets)}"
+                )
             if unknown_targets:
-                available_ts = [ts.name for ts in self.registry.list_toolsets()]
+                available_ts = [
+                    ts.name for ts in self.registry.list_toolsets() if ts.enabled
+                ]
                 messages.append(
                     f"未登録の指定をスキップしました: {', '.join(unknown_targets)} "
                     f"（登録済みツールセット: {', '.join(available_ts)}）"
@@ -131,6 +153,9 @@ class DynamicToolsetProvider(ToolProvider):
     def _build_unavailable_tool_message(self, name: str) -> str:
         spec = self.registry.get_tool(name)
         if spec is not None:
+            ts = self.registry.get_toolset(spec.toolset)
+            if ts is not None and not ts.enabled:
+                return super()._build_unavailable_tool_message(name)
             return (
                 f"[ERROR] ツール '{name}'（所属ツールセット: '{spec.toolset}'）はまだ有効化されていません。"
                 f"先に request_tools(toolsets=['{spec.toolset}']) または "
@@ -152,6 +177,8 @@ class DynamicToolsetProvider(ToolProvider):
                 active.append(fn)
 
         for ts in self.registry.list_toolsets():
+            if not ts.enabled:
+                continue
             ts_active = ts.always_active or (ts.name in self._active_toolsets)
             for spec in ts.tools:
                 if ts_active or (spec.name in self._active_tools):
@@ -173,6 +200,8 @@ class DynamicToolsetProvider(ToolProvider):
         ]
 
         for ts in self.registry.list_toolsets():
+            if not ts.enabled:
+                continue
             if ts.always_active:
                 status = "[常時有効]"
             elif ts.name in self._active_toolsets:

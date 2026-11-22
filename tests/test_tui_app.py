@@ -179,10 +179,15 @@ async def test_user_prompt_renders_raw_plain_text_while_assistant_renders_markdo
                 assert len(list(app.timeline.query(TurnWidget))) == 0
 
 
-async def test_slash_commands_status_header_update_and_search_card(tmp_path):
+async def test_slash_commands_web_badge_toggle_and_search_card_selective_save(tmp_path):
     """
-    /edit, /model, /search, /clear が StatusHeader およびタイムラインへ即座に反映されること
+    1. デフォルト +WEB で起動し、ヘッダーの #hdr-web クリックおよび /search on|off で
+       +WEB (.badge-web-on) / -WEB (.badge-web-off) が即座に切り替わること
+    2. /search <query> は単発検索として表示され自動では M:0 のままであり、
+       カードの [+ 資料に追加] ボタン押下（または /search --save）で M:1 へ保持されること
     """
+    from textual.widgets import Button
+
     cfg = AppConfig(project_path=tmp_path)
     with patch("gemio.core.client.genai.Client"):
         ctrl = GemioController(cfg)
@@ -199,7 +204,25 @@ async def test_slash_commands_status_header_update_and_search_card(tmp_path):
         with patch.object(ctrl.search_agent, "search", return_value=ok_search):
             app = GemioApp(ctrl)
             async with app.run_test(size=(80, 24)) as pilot:
-                # 1. /edit と /model の即時ヘッダー更新
+                web_badge = app.status_header.query_one("#hdr-web", Static)
+                assert app.status_header.snapshot.web_badge_text == "+WEB"
+                assert web_badge.has_class("badge-web-on")
+
+                # 1. #hdr-web バッジのクリックで -WEB (.badge-web-off) に切り替わること
+                await pilot.click("#hdr-web")
+                await pilot.pause()
+                assert app.status_header.snapshot.web_badge_text == "-WEB"
+                assert web_badge.has_class("badge-web-off")
+                assert not web_badge.has_class("badge-web-on")
+
+                # /search on で +WEB に戻ること
+                app.composer.editor.insert("/search on")
+                await pilot.press("ctrl+j")
+                await pilot.pause()
+                assert app.status_header.snapshot.web_badge_text == "+WEB"
+                assert web_badge.has_class("badge-web-on")
+
+                # /edit と /model の即時ヘッダー更新
                 app.composer.editor.insert("/edit on")
                 await pilot.press("ctrl+j")
                 await pilot.pause()
@@ -210,7 +233,7 @@ async def test_slash_commands_status_header_update_and_search_card(tmp_path):
                 await pilot.pause()
                 assert app.status_header.snapshot.current_model == "gemini-4-argon"
 
-                # 2. /search の実行と SearchTurnWidget 表示・資料カウント M:1 反映
+                # 2. /search 実行直後は自動保持されず M:0 のままで [+ 資料に追加] が有効であること
                 app.composer.editor.insert("/search Python *raw* [tag]")
                 await pilot.press("ctrl+j")
                 await app.workers.wait_for_complete()
@@ -218,11 +241,22 @@ async def test_slash_commands_status_header_update_and_search_card(tmp_path):
 
                 search_cards = list(app.timeline.query(SearchTurnWidget))
                 assert len(search_cards) == 1
-                query_static = search_cards[0].query_one(".search-query-body", Static)
+                card = search_cards[0]
+                query_static = card.query_one(".search-query-body", Static)
                 assert "/search Python *raw* [tag]" in _render_widget_plain(
                     query_static, width=100
                 )
+                assert app.status_header.snapshot.materials_count == 0
+                save_btn = card.query_one("#btn-save-material", Button)
+                assert save_btn.display is True
+                assert save_btn.disabled is False
+
+                # [+ 資料に追加] ボタンのクリックで M:1 に増え、ボタンが保持済で無効化されること
+                await pilot.click("#btn-save-material")
+                await pilot.pause()
                 assert app.status_header.snapshot.materials_count == 1
+                assert save_btn.disabled is True
+                assert "資料保持済" in str(save_btn.label)
 
                 # 3. /clear --all でタイムラインと資料カウントがリセットされること
                 app.composer.editor.insert("/clear --all")
@@ -348,12 +382,13 @@ async def test_phase1_layout_header_copy_buttons_collapsible_and_composer_height
         async with app.run_test(size=(80, 24)) as pilot:
             await pilot.pause()
 
-            # 1. StatusHeader の全バッジがヘッダー領域内に収まっていること
+            # 1. StatusHeader の全バッジ（#hdr-web 含む）が 80x24 ヘッダー領域内に収まっていること
             hdr = app.status_header
             for wid in (
                 "#hdr-project",
                 "#hdr-mode",
                 "#hdr-approval",
+                "#hdr-web",
                 "#hdr-model",
                 "#hdr-tokens",
             ):
@@ -455,3 +490,84 @@ async def test_thinking_model_enables_thoughts_and_displays_in_activity_group(tm
             col = ag.query_one(Collapsible)
             assert "Thinking (1)" in str(col.title)
             assert turns[0].assistant_card.response_text == "最終的な結論です。"
+
+
+async def test_agent_web_search_tool_in_tui_confirms_even_in_trust_mode_and_logs_sources(
+    tmp_path,
+):
+    """
+    TRUST モード中であっても ChatAgent が web_search ツールを呼んだ際は ApprovalModal（全文表示）が開き、
+    承認 ('y') するとステートレス検索結果を作業文脈に統合して回答し、ActivityGroup に出典が記録されること
+    """
+    cfg = AppConfig(project_path=tmp_path)
+    with patch("gemio.core.client.genai.Client"):
+        ctrl = GemioController(cfg)
+        ctrl.set_trust_mode(True)
+        assert ctrl.ai_client is not None
+        assert ctrl.search_agent is not None
+
+        fc_search = types.Content(
+            role="model",
+            parts=[
+                types.Part.from_function_call(
+                    name="web_search",
+                    args={"query": "2026年 最新のPythonパッケージング標準仕様"},
+                )
+            ],
+        )
+        resp_tool = MagicMock(
+            candidates=[MagicMock(content=fc_search)],
+            function_calls=[fc_search.parts[0].function_call],
+            text="",
+        )
+        resp_final = MagicMock(
+            candidates=[],
+            function_calls=None,
+            text="最新の仕様に基づいて設定を構成しました。",
+        )
+
+        mock_search_res = SearchResult(
+            query="2026年 最新のPythonパッケージング標準仕様",
+            response_text="pyproject.toml の標準フィールド解説。",
+            sources=[
+                {
+                    "title": "PyPA Specifications",
+                    "url": "https://packaging.python.org/en/latest/specifications/",
+                }
+            ],
+            created_at="16:10:00",
+            succeeded=True,
+        )
+
+        with patch.object(
+            ctrl.ai_client, "generate_content", side_effect=[resp_tool, resp_final]
+        ), patch.object(
+            ctrl.search_agent, "search", return_value=mock_search_res
+        ):
+            app = GemioApp(
+                ctrl,
+                approval_screen_factory=lambda desc: _DummyApprovalModal(desc),
+            )
+            async with app.run_test(size=(80, 24)) as pilot:
+                app.composer.editor.insert("最新のパッケージング仕様を調べて教えて")
+                await pilot.press("ctrl+j")
+
+                for _ in range(30):
+                    await pilot.pause(0.02)
+                    if isinstance(app.screen, _DummyApprovalModal):
+                        break
+                assert isinstance(app.screen, _DummyApprovalModal)
+                assert "2026年 最新のPythonパッケージング標準仕様" in app.screen.desc
+
+                await pilot.press("y")
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+
+                turns = list(app.timeline.query(TurnWidget))
+                assert len(turns) == 1
+                assert (
+                    turns[0].assistant_card.response_text
+                    == "最新の仕様に基づいて設定を構成しました。"
+                )
+                assert "web_search" in turns[0].activity_group.tool_names
+                assert len(ctrl.chat_session.materials) == 0

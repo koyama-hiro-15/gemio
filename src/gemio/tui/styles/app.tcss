@@ -27,7 +27,7 @@ StatusHeader Horizontal {
 
 .header-brand {
     width: auto;
-    max-width: 28;
+    max-width: 22;
     text-style: bold;
     color: $accent;
     padding-right: 1;
@@ -71,6 +71,25 @@ StatusHeader Horizontal {
 
 .badge-approval-trust {
     color: $error;
+}
+
+#hdr-approval {
+    padding: 0 0 0 1;
+}
+
+.header-badge.badge-web-on {
+    color: $accent;
+    text-style: bold;
+}
+
+.header-badge.badge-web-off {
+    color: $text-muted;
+    text-style: none;
+}
+
+.header-badge.badge-web-off:hover {
+    color: $text;
+    text-style: bold reverse;
 }
 
 .badge-model {
@@ -158,6 +177,28 @@ UserMessageCard {
     width: auto;
     color: $text-muted;
     margin-right: 1;
+}
+
+.save-mat-btn {
+    width: auto;
+    min-width: 10;
+    height: 1;
+    border: none;
+    padding: 0 1;
+    margin-right: 1;
+    background: $primary;
+    color: $text;
+}
+
+.save-mat-btn:hover, .save-mat-btn:focus {
+    background: $success;
+    color: $surface;
+    text-style: bold;
+}
+
+.save-mat-btn:disabled {
+    background: $surface-lighten-1;
+    color: $text-muted;
 }
 
 .copy-btn {

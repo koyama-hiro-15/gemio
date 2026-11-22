@@ -2,7 +2,7 @@
 
 **作成日:** 2026年11月23日  
 **最終更新日:** 2026年11月23日  
-**ステータス:** 設計完了（実装準備中）  
+**ステータス:** 実装完了（現行）  
 **対象システム:** `src/gemio/core/` (`search.py`, `prompts.py`, `tools/registry.py`, `tools/dynamic.py`), `src/gemio/app/` (`config.py`, `commands.py`, `controller.py`, `prompts.py`, `state.py`), `src/gemio/cli/main.py`, `src/gemio/tui/` (`app.py`, `messages.py`, `commands_palette.py`, `styles/app.tcss`, `widgets/header.py`, `widgets/search_card.py`, `widgets/welcome.py`, `screens/help.py`), `tests/`  
 
 ### 【要約】
@@ -289,3 +289,4 @@ StatusHeader: [Gemio] proj | STD | NORMAL +WEB | gemini-4-neon | Ctx:14.2k M:0
 | :--- | :--- | :--- | :--- |
 | 2026-11-23 | AI Agent | 設計完了（実装準備中） | 初版作成。`ChatAgent` からステートレス `SearchAgent` を呼び出す `web_search` ツール統合、全承認モード共通の全文常時確認、`+WEB`/`-WEB` ヘッダーバッジ（一律デフォルトON）、および `/search` 単発検索＋任意資料追加の設計を策定。 |
 | 2026-11-23 | AI Agent | 設計完了（実装準備中） | コーディング以外の文書作成・企画・一般リサーチ用途にも対応しつつ強い拘束力を維持するため、検索システムプロンプトおよび機密除外ルールを3領域（①文書・業務情報、②個人情報・非公開固有名詞、③コード・環境・認証情報）へ汎用化・拡充。 |
+| 2026-11-23 | AI Agent | 実装完了（現行） | Core / App / CLI / TUI の全レイヤー実装および単体・ヘッドレスTUIテスト（全88件合格）を完了し、関連ドキュメントへ反映。 |

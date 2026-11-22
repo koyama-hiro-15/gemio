@@ -46,6 +46,7 @@ from gemio.tui.messages import (
     CopyTextRequested,
     HeaderBadgeClicked,
     PromptSubmitted,
+    SaveSearchMaterialRequested,
 )
 from gemio.tui.screens import (
     ApiKeyModal,
@@ -262,11 +263,35 @@ class GemioApp(App[int]):
     def on_cancel_turn_requested(self, message: CancelTurnRequested) -> None:
         self.action_cancel_turn()
 
+    def on_save_search_material_requested(
+        self,
+        message: SaveSearchMaterialRequested,
+    ) -> None:
+        if self.controller.is_busy:
+            self.notify("AI処理中は資料を追加できません。", severity="warning")
+            return
+        outcome = self.controller.save_search_result_to_materials(message.result)
+        if outcome is None:
+            self.notify("追加可能な検索結果がありません。", severity="warning")
+            return
+        if isinstance(message.card, SearchTurnWidget):
+            message.card.set_outcome(outcome)
+        self.refresh_status()
+        if outcome.material_status == "added":
+            self.notify(
+                f"検索結果を作業前提資料 [第{outcome.total_materials}弾] として保持しました。"
+            )
+        else:
+            self.notify("同一内容の資料がすでに保持されています。")
+        self.composer.focus_editor()
+
     def on_header_badge_clicked(self, message: HeaderBadgeClicked) -> None:
         if message.target == "sandbox":
             self.action_show_sandbox()
         elif message.target == "approval":
             self.action_cycle_approval()
+        elif message.target == "web_search":
+            self._execute_web_search_toggle(None)
         elif message.target == "model":
             self.action_select_model()
         elif message.target == "tokens":
@@ -322,15 +347,16 @@ class GemioApp(App[int]):
         elif isinstance(parsed, CompactCommand):
             self._start_compact_worker(parsed.keep_recent_turns)
         elif isinstance(parsed, SearchCommand):
-            if parsed.clear_materials:
+            if parsed.toggle_enabled is not None:
+                self._execute_web_search_toggle(parsed.toggle_enabled)
+            elif parsed.save_last:
+                self._save_last_search_material_action()
+            elif parsed.clear_materials:
                 self._clear_search_materials_action()
             elif parsed.show_help:
                 self.push_screen(HelpModal(initial_tab="tab-commands"))
             else:
-                self._start_search_worker(
-                    parsed.query,
-                    new_session=parsed.new_session,
-                )
+                self._start_search_worker(parsed.query)
         elif isinstance(parsed, ChatPromptInput):
             self._start_chat_worker(parsed.text)
 
@@ -342,6 +368,49 @@ class GemioApp(App[int]):
         new_model = self.controller.set_model(target_model)
         self.refresh_status_and_welcome()
         self.notify(f"AIモデルを切り替えました: {new_model}")
+
+    def _execute_web_search_toggle(self, enable: bool | None = None) -> None:
+        if self.controller.is_busy:
+            self.notify(
+                "AI処理中はWeb検索設定を変更できません。",
+                severity="warning",
+            )
+            return
+        enabled, changed = self.controller.set_web_search_enabled(enable)
+        self.refresh_status_and_welcome()
+        if not changed:
+            label = "+WEB (有効)" if enabled else "-WEB (無効)"
+            self.notify(f"AIによるWeb検索ツールはすでに {label} です。")
+            return
+        if enabled:
+            self.notify(
+                "+WEB: AIによるWeb検索ツールを有効化しました（送信前に都度確認を行います）。"
+            )
+        else:
+            self.notify("-WEB: AIによるWeb検索ツールを無効化しました。")
+
+    def _save_last_search_material_action(self) -> None:
+        if self.controller.is_busy:
+            self.notify("AI処理中は資料を追加できません。", severity="warning")
+            return
+        outcome = self.controller.save_search_result_to_materials()
+        if outcome is None:
+            self.notify(
+                "保持可能な直近の単発検索結果がありません。先に /search <内容> を実行してください。",
+                severity="warning",
+            )
+            return
+        for card in reversed(list(self.timeline.query(SearchTurnWidget))):
+            if card.response_text == outcome.result.response_text:
+                card.set_outcome(outcome)
+                break
+        self.refresh_status()
+        if outcome.material_status == "added":
+            self.notify(
+                f"直近の検索結果を作業前提資料 [第{outcome.total_materials}弾] として保持しました。"
+            )
+        else:
+            self.notify("同一内容の資料がすでに保持されています。")
 
     def _clear_search_materials_action(self) -> None:
         if self.controller.is_busy:
@@ -532,7 +601,7 @@ class GemioApp(App[int]):
         self.timeline.follow_if_near_bottom()
         self.notify(f"エラーが発生しました: {error}", severity="error")
 
-    def _start_search_worker(self, query: str, *, new_session: bool = False) -> None:
+    def _start_search_worker(self, query: str) -> None:
         if not self.controller.is_client_ready:
             self.notify(
                 "APIキーが設定されていません。先にAPIキーを入力してください。",
@@ -540,26 +609,19 @@ class GemioApp(App[int]):
             )
             return
 
-        is_subsequent = self.controller.has_active_search_session and not new_session
-        search_widget = SearchTurnWidget(query, is_subsequent=is_subsequent)
+        search_widget = SearchTurnWidget(query)
         self.timeline.mount_entry(search_widget, force_scroll=True)
-        busy_label = (
-            "直前の検索を踏まえて深掘り検索中..."
-            if is_subsequent
-            else "Webを検索して最新情報を取得中..."
-        )
-        self.activity_bar.start_busy(busy_label)
-        self._run_search_in_thread(query, new_session, search_widget)
+        self.activity_bar.start_busy("Webを検索して最新情報を取得中...")
+        self._run_search_in_thread(query, search_widget)
 
     @work(thread=True, exclusive=True, group="ai_execution")
     def _run_search_in_thread(
         self,
         query: str,
-        new_session: bool,
         search_widget: SearchTurnWidget,
     ) -> None:
         try:
-            outcome = self.controller.run_search(query, new_session=new_session)
+            outcome = self.controller.run_search(query)
             self.call_from_thread(
                 self._finalize_search_on_main,
                 search_widget,

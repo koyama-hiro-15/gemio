@@ -235,3 +235,15 @@ def test_dynamic_toolset_provider_and_skill_mid_loop_activation(tmp_path):
     assert "write_file" not in after_reset_tools
     assert "read_file" not in after_reset_tools
     assert mgr.active_skill_names == []
+
+    # DynamicToolsetProvider でも Toolset.enabled = False のツールセットはカタログ・有効化から除外されること
+    write_ts = registry.get_toolset("project_write")
+    assert write_ts is not None
+    write_ts.enabled = False
+    assert "project_write" not in provider.get_catalog_prompt()
+    req_fn = [f for f in provider.get_active_tools() if f.__name__ == "request_tools"][0]
+    skip_msg = req_fn(toolsets=["project_write"])
+    assert "無効化" in skip_msg
+    assert "write_file" not in [fn.__name__ for fn in provider.get_active_tools()]
+    disabled_exec = provider.execute("write_file", {"file_path": "x.py", "content": "1"})
+    assert "無効化" in disabled_exec

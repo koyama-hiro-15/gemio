@@ -7,34 +7,45 @@ ChatSession、ChatAgent、SearchAgent の結線および型付きユースケー
 """
 
 import os
+from pathlib import Path
 import threading
 from typing import Any, Callable
 
 from gemio.app.callbacks import InteractionHandler
 from gemio.app.config import AppConfig
-from gemio.app.prompts import APP_SEARCH_GUIDANCE_INSTRUCTION
+from gemio.app.prompts import build_web_search_instruction
 from gemio.app.state import MaterialStatus, SearchOutcome, SessionSnapshot
-from gemio.core.agent import ChatAgent, ChatTurnResult
+from gemio.core.agent import ChatAgent, ChatTurnResult, emit_agent_log
 from gemio.core.client import GenAIClient, TokenUsageTracker
 from gemio.core.context import (
     ChatSession,
     ChatTurn,
     CompactionResult,
     MaterialKind,
+    MaterialStore,
 )
+from gemio.core.exceptions import AgentExecutionAborted
 from gemio.core.models import (
+    AgentLogCategory,
     ModelInfo,
     get_fallback_model_catalog,
     resolve_model_name,
 )
 from gemio.core.prompts import DEFAULT_SEARCH_INSTRUCTION, SystemPromptComposer
-from gemio.core.search import SearchAgent
+from gemio.core.search import (
+    SearchAgent,
+    SearchResult,
+    WEB_SEARCH_TOOLSET_NAME,
+    format_search_result_for_tool,
+    validate_search_query_safety,
+)
 from gemio.core.skills import SkillLoader, SkillManager, SkillSpec
 from gemio.core.tools import (
     DynamicToolsetProvider,
     StaticToolProvider,
     ToolProvider,
     ToolRegistry,
+    Toolset,
     get_builtin_toolset,
     load_project_toolsets,
 )
@@ -66,7 +77,7 @@ class GemioController:
         config: AppConfig,
         *,
         interaction_handler: InteractionHandler | None = None,
-        approval_callback: Callable[[str], str] | None = None,
+        approval_callback: Callable[[str], str | bool] | None = None,
         ask_user_callback: Callable[[str, list[str] | None, str], str] | None = None,
         iteration_limit_callback: Callable[[], tuple[bool, int]] | None = None,
         api_key: str | None = None,
@@ -85,6 +96,8 @@ class GemioController:
 
         self._exec_lock = threading.Lock()
         self._active_cancel_event: threading.Event | None = None
+        self._active_turn_log_callback: Callable | None = None
+        self._last_search_result: SearchResult | None = None
 
         # --trust 指定時は UI 上でユーザーの同意を得るまで安全側モードで初期化する
         safe_initial_mode = (
@@ -132,11 +145,130 @@ class GemioController:
             approval_mode=initial_approval_mode,
         )
 
+    def _create_web_search_toolset(self) -> Toolset:
+        def web_search(query: str) -> str:
+            """
+            ローカル対話履歴やファイルから隔離された外部検索エージェントに質問を送信し、最新の公開情報を取得します。
+            作業中の非公開原稿・個人情報や取引先名・固有コード断片・ローカルパス・認証情報は絶対に含めず、
+            公開されている一般名称・概念・対象時期やバージョン等の前提条件のみを用いた短い自己完結した質問文を指定してください。
+
+            Args:
+                query: 検索エージェントへ送信する自己完結した質問文（非公開情報を含まないこと）。
+
+            Returns:
+                検索回答および参照元ドメイン情報、またはエラー・拒否案内メッセージ。
+            """
+            return self._execute_agent_web_search(query)
+
+        return Toolset.from_callables(
+            name=WEB_SEARCH_TOOLSET_NAME,
+            description="隔離された検索エージェントへ質問を送り、最新の外部情報を取得するWeb検索ツールセット",
+            funcs=[web_search],
+            always_active=True,
+            enabled=self.config.enable_web_search,
+        )
+
+    def _execute_agent_web_search(self, query: str) -> str:
+        """
+        ChatAgent からの web_search ツール呼び出しを実行します。
+        プリフライト機密・パス検査の後、承認モード（NORMAL / EDIT / TRUST）を問わず
+        常に送信プロンプト全文の承認確認を行います。
+        """
+        self._ensure_client_ready()
+        assert self.search_agent is not None
+
+        forbidden_paths = [str(self.project_path)]
+        try:
+            home_str = str(Path.home())
+            if home_str:
+                forbidden_paths.append(home_str)
+        except Exception:
+            pass
+
+        block_msg = validate_search_query_safety(
+            query,
+            forbidden_paths=forbidden_paths,
+        )
+        if block_msg is not None:
+            return block_msg
+
+        cleaned_query = query.strip()
+        action_desc = (
+            "Web検索エージェントへの問い合わせ（外部送信）:\n"
+            "  ※ローカル対話履歴やファイルは送信されません。以下のプロンプト全文のみが送信されます。\n\n"
+            f"  {cleaned_query}"
+        )
+
+        decision = self.on_approval(action_desc)
+        if decision is True:
+            norm = "y"
+        elif isinstance(decision, str):
+            norm = decision.strip().lower()
+        else:
+            norm = "n"
+
+        if norm in {"a", "abort"}:
+            raise AgentExecutionAborted(
+                "ユーザーによって作業の強制中止（Abort）が選択されました。"
+            )
+        if norm in {"k", "kill"}:
+            self.project._kill_process()
+        if norm not in {"y", "yes", "approve"}:
+            return (
+                "[REJECTED] ユーザーによってWeb検索の実行が拒否されました。"
+                "手元のファイル・資料のみで作業を進めるか、ask_user ツールでユーザーに方針を相談してください。"
+            )
+
+        with self._exec_lock:
+            cancel_ev = self._active_cancel_event
+        turn_log = self._active_turn_log_callback
+
+        def _forward_warn_only(msg: str, category: str = "") -> None:
+            if turn_log is not None and category == AgentLogCategory.WARNING:
+                emit_agent_log(turn_log, msg, AgentLogCategory.WARNING)
+
+        result = self.search_agent.search(
+            cleaned_query,
+            on_log_append=_forward_warn_only,
+            cancel_event=cancel_ev,
+        )
+        if result.aborted:
+            raise AgentExecutionAborted("ユーザーによってWeb検索が中断されました。")
+        if not result.succeeded or not result.response_text.strip():
+            return f"[ERROR] {result.response_text}"
+
+        if turn_log is not None:
+            if result.sources:
+                src_names = [
+                    MaterialStore.extract_source_display(
+                        s.get("title", ""), s.get("url", "")
+                    )
+                    for s in result.sources[:5]
+                ]
+                suffix = (
+                    f" (+{len(result.sources) - 5}件)"
+                    if len(result.sources) > 5
+                    else ""
+                )
+                src_summary = ", ".join(src_names) + suffix
+            else:
+                src_summary = "参照元リンクなし"
+            emit_agent_log(
+                turn_log,
+                f"{result.created_at}\nSources: {src_summary}",
+                AgentLogCategory.SEARCH,
+            )
+
+        return format_search_result_for_tool(result)
+
     def _setup_tools_skills_and_prompts(self) -> None:
         self.tool_registry = ToolRegistry()
         for ts in self.project.agent_toolsets():
             self.tool_registry.register_toolset(ts)
         self.tool_registry.register_toolset(get_builtin_toolset())
+        self._web_search_toolset = self._create_web_search_toolset()
+        self.tool_registry.register_toolset(self._web_search_toolset)
+
         for ext_ts in load_project_toolsets(
             self.project_path,
             on_warning=self.startup_warnings.append,
@@ -173,7 +305,7 @@ class GemioController:
             skill_manager=self.skill_manager,
             extra_sections=[
                 self.project.get_system_instruction(),
-                APP_SEARCH_GUIDANCE_INSTRUCTION,
+                lambda: build_web_search_instruction(self.web_search_enabled),
             ],
         )
 
@@ -257,8 +389,8 @@ class GemioController:
     # 2. Project / ChatAgent からの同期コールバック中継
     # =====================================================================
 
-    def on_approval(self, action_description: str) -> str:
-        """破壊的操作実行前の Human-in-the-loop 承認確認コールバック。"""
+    def on_approval(self, action_description: str) -> str | bool:
+        """破壊的操作または外部検索送信前の Human-in-the-loop 承認確認コールバック。"""
         if self._interaction_handler is not None:
             return self._interaction_handler.request_approval(action_description)
         if self._approval_callback is not None:
@@ -312,6 +444,7 @@ class GemioController:
             container_name=container,
             approval_mode=self.project.approval_mode,
             current_model=self.current_model,
+            web_search_enabled=self.web_search_enabled,
             context_tokens=int(usage.get("last_prompt_tokens", 0)),
             cumulative_tokens=int(usage.get("cumulative_total_tokens", 0)),
             total_api_calls=int(usage.get("total_api_calls", 0)),
@@ -348,6 +481,24 @@ class GemioController:
     # =====================================================================
     # 4. 設定変更・セッション・コンテキスト操作API
     # =====================================================================
+
+    @property
+    def web_search_enabled(self) -> bool:
+        """AI（ChatAgent）による web_search ツールの呼び出しが有効（+WEB）かどうかを返します。"""
+        return self._web_search_toolset.enabled
+
+    def set_web_search_enabled(
+        self,
+        enable: bool | None = None,
+    ) -> tuple[bool, bool]:
+        """
+        AIによる web_search ツール（+WEB / -WEB）を設定（enable=None 時はトグル）し、
+        `(現在の有効状態, 変更されたか)` を返します。
+        """
+        prev = self._web_search_toolset.enabled
+        target = (not prev) if enable is None else bool(enable)
+        self._web_search_toolset.enabled = target
+        return target, (prev != target)
 
     def set_approval_mode(self, mode: str) -> tuple[str, bool]:
         """
@@ -428,14 +579,13 @@ class GemioController:
 
     def clear_session(self, clear_materials: bool = False) -> dict[str, int]:
         """
-        対話履歴・トークン統計・検索文脈・有効スキル・動的ツール状態・拒否保留状態を一括リセットします。
+        対話履歴・トークン統計・直近検索キャッシュ・有効スキル・動的ツール状態・拒否保留状態を一括リセットします。
         """
         reset_summary = self.chat_session.reset(
             clear_materials=clear_materials,
             token_tracker=self.token_tracker,
         )
-        if self.search_agent is not None:
-            self.search_agent.reset_history()
+        self._last_search_result = None
         self.skill_manager.clear_active()
         if isinstance(self.tool_provider, DynamicToolsetProvider):
             self.tool_provider.reset_active_tools()
@@ -445,6 +595,36 @@ class GemioController:
     def clear_search_materials(self) -> int:
         """保持している Web 検索由来の作業前提資料をすべて破棄し、破棄件数を返します。"""
         return self.chat_session.materials.clear(kind=MaterialKind.WEB_SEARCH)
+
+    @property
+    def last_search_result(self) -> SearchResult | None:
+        """直近に実行された `/search` 単発検索の成功結果を返します（未実行時は None）。"""
+        return self._last_search_result
+
+    def save_search_result_to_materials(
+        self,
+        result: SearchResult | None = None,
+    ) -> SearchOutcome | None:
+        """
+        指定された（または直近の）単発 Web 検索結果を任意で作業前提資料ストアへ追加し、
+        更新された SearchOutcome を返します。追加可能な検索結果がない場合は None を返します。
+        """
+        target = result if result is not None else self._last_search_result
+        if target is None or not target.succeeded or not target.response_text.strip():
+            return None
+
+        _, added = self.chat_session.materials.add_search_result(
+            query=target.query,
+            response_text=target.response_text,
+            sources=target.sources,
+            created_at=target.created_at,
+        )
+        status: MaterialStatus = "added" if added else "duplicate"
+        return SearchOutcome(
+            result=target,
+            material_status=status,
+            total_materials=len(self.chat_session.materials),
+        )
 
     def rewind_turns(self, steps: int = 1) -> list[ChatTurn]:
         """直近から指定ターン数だけ対話履歴を巻き戻し、取り消された ChatTurn リストを返します。"""
@@ -483,11 +663,6 @@ class GemioController:
         with self._exec_lock:
             return self._active_cancel_event is not None
 
-    @property
-    def has_active_search_session(self) -> bool:
-        """連続深掘り検索用の検索履歴がアクティブかどうかを返します。"""
-        return bool(self.search_agent and self.search_agent.has_active_session)
-
     def _begin_execution(self) -> threading.Event:
         with self._exec_lock:
             if self._active_cancel_event is not None:
@@ -525,14 +700,12 @@ class GemioController:
     ) -> ChatTurnResult:
         """
         通常のプロンプト入力に対するAI思考・ツール実行ループを1ターン実行します。
-        直前の連続Web検索セッションは自動的に区切られます。
         """
         self._ensure_client_ready()
         assert self.chat_agent is not None
-        if self.search_agent is not None:
-            self.search_agent.reset_history()
 
         cancel_event = self._begin_execution()
+        self._active_turn_log_callback = on_log
         try:
             return self.chat_agent.process_prompt(
                 prompt,
@@ -540,16 +713,18 @@ class GemioController:
                 cancel_event=cancel_event,
             )
         finally:
+            self._active_turn_log_callback = None
             self._end_execution(cancel_event)
 
     def run_search(
         self,
         query: str,
-        new_session: bool = False,
         on_log: Callable | None = None,
     ) -> SearchOutcome:
         """
-        Web検索を実行し、成功かつ新規内容の場合のみ作業前提資料ストアへ追加して SearchOutcome を返します。
+        ユーザーによる単発Web検索（/search <query>）を実行します。
+        結果を作業前提資料へ自動追加はせず、任意の資料化（save_search_result_to_materials）に備えて
+        unretained ステータスの SearchOutcome を返します。
         """
         self._ensure_client_ready()
         assert self.search_agent is not None
@@ -559,7 +734,6 @@ class GemioController:
             result = self.search_agent.search(
                 query,
                 on_log_append=on_log,
-                new_session=new_session,
                 cancel_event=cancel_event,
             )
         finally:
@@ -571,13 +745,8 @@ class GemioController:
         elif not result.succeeded or not result.response_text.strip():
             status = "failed"
         else:
-            _, added = self.chat_session.materials.add_search_result(
-                query=result.query,
-                response_text=result.response_text,
-                sources=result.sources,
-                created_at=result.created_at,
-            )
-            status = "added" if added else "duplicate"
+            self._last_search_result = result
+            status = "unretained"
 
         return SearchOutcome(
             result=result,

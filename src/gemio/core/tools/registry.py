@@ -60,6 +60,7 @@ class Toolset:
     description: str
     tools: list[ToolSpec] = field(default_factory=list)
     always_active: bool = False
+    enabled: bool = True
 
     @classmethod
     def from_callables(
@@ -69,6 +70,7 @@ class Toolset:
         funcs: list[Callable],
         *,
         always_active: bool = False,
+        enabled: bool = True,
     ) -> "Toolset":
         specs = [ToolSpec.from_callable(f, toolset=name) for f in funcs]
         return cls(
@@ -76,6 +78,7 @@ class Toolset:
             description=description.strip(),
             tools=specs,
             always_active=always_active,
+            enabled=enabled,
         )
 
 
@@ -169,7 +172,15 @@ class ToolProvider(ABC):
 
     def _build_unavailable_tool_message(self, name: str) -> str:
         """未知または未有効なツールが呼び出された際の案内メッセージを構築します。"""
-        if self.registry.get_tool(name) is not None:
+        spec = self.registry.get_tool(name)
+        if spec is not None:
+            ts = self.registry.get_toolset(spec.toolset)
+            if ts is not None and not ts.enabled:
+                return (
+                    f"[ERROR] ツール '{name}'（所属ツールセット: '{spec.toolset}'）は"
+                    "現在ユーザー設定により無効化されています。"
+                    "このツールを使用せずに手元の情報で対応するか、ユーザーへ有効化を相談してください。"
+                )
             return (
                 f"[ERROR] ツール '{name}' は現在有効化されていません。"
                 "使用する前にツール要求を行って有効化してください。"
@@ -223,10 +234,13 @@ class StaticToolProvider(ToolProvider):
         seen: set[str] = set()
         active: list[Callable] = []
 
-        for spec in self.registry.list_tools():
-            if spec.name not in seen:
-                seen.add(spec.name)
-                active.append(spec.func)
+        for ts in self.registry.list_toolsets():
+            if not ts.enabled:
+                continue
+            for spec in ts.tools:
+                if spec.name not in seen:
+                    seen.add(spec.name)
+                    active.append(spec.func)
 
         for fname, fn in self._extra_tools.items():
             if fname not in seen:

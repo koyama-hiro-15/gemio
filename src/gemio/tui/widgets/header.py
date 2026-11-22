@@ -1,5 +1,5 @@
 """
-画面最上部に常駐し、セッション状態（モード・承認・モデル・トークン/資料数）を表示する StatusHeader ウィジェット。
+画面最上部に常駐し、セッション状態（モード・承認・Web検索ON/OFF・モデル・トークン/資料数）を表示する StatusHeader ウィジェット。
 """
 
 from textual import events
@@ -9,8 +9,8 @@ from textual.widget import Widget
 from textual.widgets import Static
 
 from gemio.app.state import SessionSnapshot
-from gemio.tui.messages import HeaderBadgeClicked, HeaderBadgeTarget
 from gemio.project import APPROVAL_MODE_EDIT, APPROVAL_MODE_TRUST
+from gemio.tui.messages import HeaderBadgeClicked, HeaderBadgeTarget
 
 
 def format_compact_tokens(count: int) -> str:
@@ -74,6 +74,12 @@ class StatusHeader(Widget):
                 id="hdr-approval",
                 classes="header-badge",
             )
+            yield _ClickableBadge(
+                "",
+                "web_search",
+                id="hdr-web",
+                classes="header-badge",
+            )
             yield Static("|", markup=False, classes="header-sep")
             yield _ClickableBadge(
                 "",
@@ -102,6 +108,7 @@ class StatusHeader(Widget):
         proj_w = self.query_one("#hdr-project", Static)
         mode_w = self.query_one("#hdr-mode", _ClickableBadge)
         appr_w = self.query_one("#hdr-approval", _ClickableBadge)
+        web_w = self.query_one("#hdr-web", _ClickableBadge)
         model_w = self.query_one("#hdr-model", _ClickableBadge)
         tok_w = self.query_one("#hdr-tokens", _ClickableBadge)
 
@@ -124,6 +131,10 @@ class StatusHeader(Widget):
             snap.approval_mode == APPROVAL_MODE_TRUST,
             "badge-approval-trust",
         )
+
+        web_w.update(snap.web_badge_text)
+        web_w.set_class(snap.web_search_enabled, "badge-web-on")
+        web_w.set_class(not snap.web_search_enabled, "badge-web-off")
 
         model_w.update(snap.current_model)
 

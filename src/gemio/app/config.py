@@ -51,6 +51,7 @@ class AppConfig:
     requested_edit: bool = False
     requested_trust: bool = False
     dynamic_tools: bool = False
+    enable_web_search: bool = True
     max_iterations: int = APP_DEFAULT_MAX_ITERATIONS
 
     @property
@@ -72,6 +73,7 @@ class AppConfig:
             requested_edit=bool(getattr(args, "edit", False)),
             requested_trust=bool(getattr(args, "trust", False)),
             dynamic_tools=bool(getattr(args, "dynamic_tools", False)),
+            enable_web_search=not bool(getattr(args, "no_web_search", False)),
         )
 
     def resolve_initial_approval_mode(

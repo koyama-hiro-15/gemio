@@ -1,7 +1,7 @@
 # 🛠️ Gemio 開発者モード（Developer Mode）詳細マニュアル
 
 **作成日:** 2026年11月02日  
-**最終更新日:** 2026年11月14日  
+**最終更新日:** 2026年11月23日  
 **ステータス:** 運用中  
 **対象システム:** Gemio 開発者モード (`src/gemio/project/developer.py`, `src/gemio/project/base.py`, `src/gemio/core/prompts.py`, `src/gemio/cli/main.py`, `src/gemio/cli/ui/`)  
 
@@ -350,9 +350,9 @@ python -m gemio ./external-repo --dev --container sandbox
 
 ---
 
-### 6.3 レシピ3：Web検索 (`/search`) とオフラインサンドボックス検証の連携
-1. `/search` で最新ライブラリの仕様やAPIを調査（ホストOS側で検索され「作業前提資料」として保持されます）。
-2. 保持された資料をもとに、オフライン（`--network none`）のサンドボックス内で安全にコード実装・テストを実行させます。
+### 6.3 レシピ3：Web検索（`+WEB` / `/search`）とオフラインサンドボックス検証の連携
+1. 通常プロンプトでそのまま実装・調査を指示すると、ホストOS側のAIが必要に応じて `web_search` ツールで最新仕様を調査します（送信前にプロンプト全文を確認できます。不要な場合はヘッダーの `+WEB` クリックまたは `/search off` で `-WEB` に切替可能）。また、事前に `/search <内容>` ➔ `[+ 資料に追加]` で前提資料として保持しておくこともできます。
+2. 取得した最新仕様をもとに、オフライン（`--network none`）のサンドボックス内で安全にコード実装・テストを実行させます。
 
 ---
 
@@ -384,3 +384,4 @@ python -m gemio ./external-repo --dev --container sandbox
 | 2026-11-10 | AI Agent | 運用中 | コンテナセキュリティの3段階境界基準統一に伴い、コンテナ環境変数内の各種APIキー・トークンを `in_container` / `host_docker` 両モードで検査（値は読み取らずキー名のみ検出）し、起動拒否ではなく強い警告（`🔴 危険`）として診断パネルに表示する仕様へ更新。 |
 | 2026-11-11 | AI Agent | 運用中 | `run_sandbox_command` の承認パネルにおいて、コマンドの意図説明（`description`）と実行コマンド全体（省略なし）を表示する仕様を反映。 |
 | 2026-11-14 | AI Agent | 運用中 | `.gemio/`（Skills・カスタムツール管理領域）の書き込み保護ガードレールおよび `/sandbox` マウント診断対象への追加を反映。 |
+| 2026-11-23 | AI Agent | 運用中 | AIによるWeb検索ツール連携（`+WEB` / `-WEB`）および `/search` の任意資料化仕様に合わせてレシピ3の記述を更新。 |

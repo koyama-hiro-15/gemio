@@ -37,8 +37,8 @@
 
 | 連番 | 設計書ファイル | 作成日 | 対象レイヤー | ステータス | 内容の要約 |
 | :---: | :--- | :---: | :---: | :--- | :--- |
-| **#001** | **[001_web_search.md](./design/001_web_search.md)**<br>Web検索機能（Google Search Grounding） | 2026-10-29 | Core / CLI | 🔄 一部更新<br>(`#002`, `#012`, `#013` 参照) | `/search` 明示オプトイン方式、Function Callingとのリクエスト分離、通常履歴の機密隔離、連続深掘り検索、出典表示の基本設計。 |
-| **#002** | **[002_search_material_integration.md](./design/002_search_material_integration.md)**<br>Web検索結果の「作業前提資料」分離・統合 | 2026-10-30 | Core / CLI | 🔄 一部更新<br>(`#013` 参照) | 検索結果を会話履歴に混ぜず独立保持してプロンプト先頭へインジェクションする設計、および長大なリダイレクトURL除外によるトークン削減。 |
+| **#001** | **[001_web_search.md](./design/001_web_search.md)**<br>Web検索機能（Google Search Grounding） | 2026-10-29 | Core / CLI | 🔄 一部更新<br>(`#002`, `#013`, `#016` 参照) | `/search` 明示オプトイン方式、Function Callingとのリクエスト分離、通常履歴の機密隔離、連続深掘り検索、出典表示の基本設計。 |
+| **#002** | **[002_search_material_integration.md](./design/002_search_material_integration.md)**<br>Web検索結果の「作業前提資料」分離・統合 | 2026-10-30 | Core / CLI | 🔄 一部更新<br>(`#013`, `#016` 参照) | 検索結果を会話履歴に混ぜず独立保持してプロンプト先頭へインジェクションする設計、および長大なリダイレクトURL除外によるトークン削減。 |
 | **#003** | **[003_server_error_recovery.md](./design/003_server_error_recovery.md)**<br>サーバーエラー回復と対話整合性維持 | 2026-10-31 | Core / CLI | 🔄 一部更新<br>(`#013` 参照) | HTTP 503/429等の指数バックオフ自動リトライ、中断時の実行済みツール結果保持＋モデル中断発言補完によるロール整合性保護。 |
 | **#004** | **[004_welcome_and_help.md](./design/004_welcome_and_help.md)**<br>ウェルカム表示 ＆ ヘルプ機能 | 2026-10-31 | CLI / UI | 🔄 一部更新<br>(`#012` 参照) | 起動時に1回表示するウェルカムバナーと、対話中に随時呼び出せる `/help` コマンドリファレンスパネルの役割分離設計。 |
 | **#005** | **[005_sandbox_and_developer_mode.md](./design/005_sandbox_and_developer_mode.md)**<br>サンドボックス・トラストモード・開発者モード | 2026-11-02 | Project / CLI | 🔄 一部更新<br>(`#009`, `#012`, `#013` 参照) | 基本モード（`Project`）と開発者モード（`DeveloperProject`）の2層設計、3段階コンテナセキュリティ境界、値非保持の機密キー検査、サーキットブレーカー。 |
@@ -52,7 +52,7 @@
 | **#013** | **[013_core_package_refactoring.md](./design/013_core_package_refactoring.md)**<br>Coreパッケージ構造全面リファクタリング | 2026-11-12 | Core / Project | ✅ **実装完了（現行）** | `GenAIClient`・`ChatAgent`・`SearchAgent` 分離、ターン履歴・SHA-256管理 `MaterialStore`・要約圧縮（`context/`）、Skills段階的開示、動的ツール基盤。 |
 | **#014** | **[014_textual_tui_architecture.md](./design/014_textual_tui_architecture.md)**<br>Textual TUI一本化・4層パッケージ再編・画面/操作設計 | 2026-11-17 | App / TUI / CLI | ✅ **実装完了（現行）** | `prompt_toolkit` 廃止とTextual完全一本化、`app`/`tui`/`cli` 再編、最小 `80×24` 対応シングルカラムUI、ユーザー生テキスト表示＋AI Markdown描画、モーダル・ターン中断設計。 |
 | **#015** | **[015_dynamic_model_catalog_and_thinking.md](./design/015_dynamic_model_catalog_and_thinking.md)**<br>動的モデルカタログ・スペック取得と Thinking 統合 | 2026-11-21 | Core / App / TUI | ✅ **実装完了（現行）** | `models.list` / `models.get` による動的モデル一覧・スペックキャッシュ基盤（`ModelInfo`）、Thinking 対応モデルの自動判定とリアルタイム思考ログ表示、`ModelSelectModal` の動的化。 |
-| **#016** | **[016_agent_delegated_web_search.md](./design/016_agent_delegated_web_search.md)**<br>作業エージェント連携型Web検索と検索スイッチ | 2026-11-23 | Core / App / TUI | 📝 設計完了<br>(実装準備中) | `ChatAgent` からステートレス `SearchAgent` を呼ぶ `web_search` ツール統合、全モード共通の全文常時確認、`+WEB`/`-WEB` バッジ（デフォルトON）、`/search` 単発検索＋任意資料追加。 |
+| **#016** | **[016_agent_delegated_web_search.md](./design/016_agent_delegated_web_search.md)**<br>作業エージェント連携型Web検索と検索スイッチ | 2026-11-23 | Core / App / TUI | ✅ **実装完了（現行）** | `ChatAgent` からステートレス `SearchAgent` を呼ぶ `web_search` ツール統合、全モード共通の全文常時確認、`+WEB`/`-WEB` バッジ（デフォルトON）、`/search` 単発検索＋任意資料追加。 |
 
 ---
 
@@ -84,4 +84,4 @@
 | 2026-11-17 | AI Agent | 運用中 | 初版作成。`docs/design/` の3桁連番（`001`〜`013`）およびステータス管理の導入に伴い、`docs/` 全体の目次インデックスとレイヤー別逆引きガイドを整備。 |
 | 2026-11-17 | AI Agent | 運用中 | `#014`（`014_textual_tui_architecture.md`）の設計作成および実装完了に伴い、`#014` を `実装完了（現行）`、`#012` を `置換済み（Superseded by #014）` に更新。 |
 | 2026-11-21 | AI Agent | 運用中 | `docs/tech_docs/google_genai_models_reference.md` の追加および `#015`（`015_dynamic_model_catalog_and_thinking.md`）の作成・実装完了に伴い一覧表を更新。 |
-| 2026-11-23 | AI Agent | 運用中 | `#016`（`016_agent_delegated_web_search.md`）の作成に伴い一覧表・逆引きガイドを更新。 |
+| 2026-11-23 | AI Agent | 運用中 | `#016`（`016_agent_delegated_web_search.md`）の作成および実装完了に伴い、`#016` を `実装完了（現行）` に更新し、`#001`・`#002` の参照情報を同期。 |

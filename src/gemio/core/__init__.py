@@ -46,8 +46,12 @@ from gemio.core.prompts import (
     SystemPromptComposer,
 )
 from gemio.core.search import (
+    MAX_TOOL_SEARCH_QUERY_CHARS,
     SearchAgent,
     SearchResult,
+    WEB_SEARCH_TOOLSET_NAME,
+    format_search_result_for_tool,
+    validate_search_query_safety,
 )
 from gemio.core.skills import (
     BUILTIN_SKILLS_DIR,
@@ -77,8 +81,12 @@ __all__ = [
     "ChatAgent",
     "ChatTurnResult",
     "emit_agent_log",
+    "WEB_SEARCH_TOOLSET_NAME",
+    "MAX_TOOL_SEARCH_QUERY_CHARS",
     "SearchAgent",
     "SearchResult",
+    "validate_search_query_safety",
+    "format_search_result_for_tool",
     "GenAIClient",
     "TokenUsageTracker",
     "ChatTurn",

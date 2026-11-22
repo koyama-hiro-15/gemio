@@ -6,7 +6,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gemio.app import APP_SEARCH_GUIDANCE_INSTRUCTION
+from gemio.app import (
+    APP_WEB_SEARCH_DISABLED_INSTRUCTION,
+    APP_WEB_SEARCH_ENABLED_INSTRUCTION,
+)
 from gemio.cli import (
     check_tty_available,
     create_controller_from_args,
@@ -68,13 +71,14 @@ def test_no_prompt_toolkit_dependency_in_codebase_and_top_level_gemio_is_ui_free
 
 
 def test_parse_args_all_options(tmp_path):
-    """コマンドライン引数の解析（デフォルト値、--model、--dev、--container、--edit、--trust/--auto、--dynamic-tools）が正確であること"""
+    """コマンドライン引数の解析（デフォルト値、--model、--dev、--container、--edit、--trust/--auto、--dynamic-tools、--no-web-search）が正確であること"""
     default_args = parse_args([])
     assert default_args.project_dir == "."
     assert default_args.dev is False
     assert default_args.edit is False
     assert default_args.trust is False
     assert default_args.dynamic_tools is False
+    assert default_args.no_web_search is False
 
     custom_args = parse_args(
         [
@@ -87,6 +91,7 @@ def test_parse_args_all_options(tmp_path):
             "--edit",
             "--auto",
             "--dynamic-tools",
+            "--no-web-search",
         ]
     )
     assert custom_args.project_dir == str(tmp_path)
@@ -96,6 +101,7 @@ def test_parse_args_all_options(tmp_path):
     assert custom_args.edit is True
     assert custom_args.trust is True
     assert custom_args.dynamic_tools is True
+    assert custom_args.no_web_search is True
 
 
 def test_cli_preflight_rejects_non_tty_invalid_dir_security_error_and_missing_api_key(
@@ -183,15 +189,16 @@ def test_cli_runs_gemio_app_propagates_exit_code_and_closes_controller(tmp_path)
 def test_controller_from_args_composes_three_layer_system_instructions(tmp_path):
     """
     create_controller_from_args が core 基本指示・Project/DeveloperProject 指示・
-    APP_SEARCH_GUIDANCE_INSTRUCTION を適切に合成すること
+    Web検索インストラクション（デフォルト +WEB / --no-web-search 時は -WEB）を適切に合成すること
     """
     with patch("gemio.core.client.genai.Client"):
         ctrl_std = create_controller_from_args(parse_args([str(tmp_path)]))
         assert ctrl_std.chat_agent is not None
+        assert ctrl_std.web_search_enabled is True
         std_inst = ctrl_std.chat_agent.instruction
         assert "【外部情報および不確実な事実に関するルール】" in std_inst
         assert "【ユーザーへの確認・質問（ask_userツール）に関するルール】" in std_inst
-        assert APP_SEARCH_GUIDANCE_INSTRUCTION.strip() in std_inst
+        assert APP_WEB_SEARCH_ENABLED_INSTRUCTION.strip() in std_inst
         assert "run_sandbox_command" not in std_inst
         ctrl_std.close()
 
@@ -199,9 +206,12 @@ def test_controller_from_args_composes_three_layer_system_instructions(tmp_path)
          patch.object(DeveloperProject, "_validate_in_container_security"), \
          patch.dict("os.environ", {"GEMINI_API_KEY": "DUMMY_ENV_KEY"}, clear=True), \
          patch("gemio.core.client.genai.Client"):
-        ctrl_dev = create_controller_from_args(parse_args([str(tmp_path), "--dev"]))
+        ctrl_dev = create_controller_from_args(
+            parse_args([str(tmp_path), "--dev", "--no-web-search"])
+        )
         assert ctrl_dev.chat_agent is not None
+        assert ctrl_dev.web_search_enabled is False
         dev_inst = ctrl_dev.chat_agent.instruction
         assert "run_sandbox_command" in dev_inst
-        assert APP_SEARCH_GUIDANCE_INSTRUCTION.strip() in dev_inst
+        assert APP_WEB_SEARCH_DISABLED_INSTRUCTION.strip() in dev_inst
         ctrl_dev.close()

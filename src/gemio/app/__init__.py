@@ -29,7 +29,12 @@ from gemio.app.config import (
     validate_project_dir,
 )
 from gemio.app.controller import GemioController
-from gemio.app.prompts import APP_SEARCH_GUIDANCE_INSTRUCTION
+from gemio.app.prompts import (
+    APP_SEARCH_GUIDANCE_INSTRUCTION,
+    APP_WEB_SEARCH_DISABLED_INSTRUCTION,
+    APP_WEB_SEARCH_ENABLED_INSTRUCTION,
+    build_web_search_instruction,
+)
 from gemio.app.state import (
     ContextHealth,
     MaterialStatus,
@@ -40,6 +45,9 @@ from gemio.app.state import (
 __all__ = [
     "APP_DEFAULT_MAX_ITERATIONS",
     "APP_SEARCH_GUIDANCE_INSTRUCTION",
+    "APP_WEB_SEARCH_DISABLED_INSTRUCTION",
+    "APP_WEB_SEARCH_ENABLED_INSTRUCTION",
+    "build_web_search_instruction",
     "AppConfig",
     "AppStartupError",
     "ChatPromptInput",

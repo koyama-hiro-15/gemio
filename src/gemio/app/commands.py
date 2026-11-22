@@ -66,10 +66,11 @@ class ModelCommand:
 
 @dataclass(frozen=True)
 class SearchCommand:
-    """Web検索・作業前提資料操作コマンド (/search, /s)。"""
+    """Web検索・AI検索ツール切替・作業前提資料操作コマンド (/search, /s)。"""
 
     query: str = ""
-    new_session: bool = False
+    toggle_enabled: bool | None = None
+    save_last: bool = False
     clear_materials: bool = False
     show_help: bool = False
 
@@ -166,16 +167,7 @@ def parse_slash_command(raw_input: str) -> ParsedInput | None:
         return ModelCommand(target_model=None)
 
     if lower in {"/search", "/s"} or lower.startswith(("/search ", "/s ")):
-        if lower in {"/search --clear", "/search -c", "/s --clear", "/s -c"}:
-            return SearchCommand(clear_materials=True)
-        if lower in {
-            "/search",
-            "/s",
-            "/search -n",
-            "/search --new",
-            "/s -n",
-            "/s --new",
-        }:
+        if lower in {"/search", "/s"}:
             return SearchCommand(show_help=True)
 
         raw_query = (
@@ -185,19 +177,18 @@ def parse_slash_command(raw_input: str) -> ParsedInput | None:
         )
         raw_query_lower = raw_query.lower()
 
+        if not raw_query:
+            return SearchCommand(show_help=True)
+        if raw_query_lower in {"on", "enable", "true"}:
+            return SearchCommand(toggle_enabled=True)
+        if raw_query_lower in {"off", "disable", "false"}:
+            return SearchCommand(toggle_enabled=False)
+        if raw_query_lower in {"-s", "--save"}:
+            return SearchCommand(save_last=True)
         if raw_query_lower in {"-c", "--clear"}:
             return SearchCommand(clear_materials=True)
-        if not raw_query or raw_query_lower in {"-n", "--new"}:
-            return SearchCommand(show_help=True)
 
-        if raw_query_lower.startswith(("-n ", "--new ")):
-            split_q = raw_query.split(maxsplit=1)
-            actual_q = split_q[1].strip() if len(split_q) > 1 else ""
-            if not actual_q:
-                return SearchCommand(show_help=True)
-            return SearchCommand(query=actual_q, new_session=True)
-
-        return SearchCommand(query=raw_query, new_session=False)
+        return SearchCommand(query=raw_query)
 
     if lower in {"/copy", "/cp"}:
         return CopyCommand()

@@ -1,14 +1,14 @@
 # #002 Web検索結果の「作業前提資料」分離・統合 設計書および検証手順
 
 **作成日:** 2026年10月30日  
-**最終更新日:** 2026年11月17日  
-**ステータス:** 一部更新（#013 参照）  
+**最終更新日:** 2026年11月23日  
+**ステータス:** 一部更新（#013, #016 参照）  
 **対象システム:** `src/gemio/core/agent.py`, `src/gemio/core/prompts.py`, `src/gemio/cli/main.py`, `src/gemio/cli/ui.py`  
 
 ### 【要約】
 Google Search GroundingによるWeb検索結果を通常の会話履歴（`chat_history`）から切り離し、セッション内で蓄積・保持する独立ストレージ（`search_materials`）へ分離した上で、通常プロンプト実行時に先頭へ「作業前提資料」として自動合成（インジェクション）する仕様および検証手順を定義します。
 
-> **💡 現行仕様に関する注記:** 検索結果を会話履歴から切り離してプロンプト先頭へインジェクションする基本仕様およびリダイレクトURL除外仕様は現在も有効ですが、内部のデータ構造（旧 `AIChatAgent.search_materials`）は後続の [`013_core_package_refactoring.md`](./013_core_package_refactoring.md) にて `MaterialStore` / `ChatSession`（物理パス非保持・SHA-256重複排除）へ刷新されています。現行仕様は [`manuals/07_ARCHITECTURE_REFERENCE.md`](../../manuals/07_ARCHITECTURE_REFERENCE.md) を参照してください。
+> **💡 現行仕様に関する注記:** 作業前提資料の先頭インジェクションおよびリダイレクトURL除外仕様は現在も有効ですが、[`013_core_package_refactoring.md`](./013_core_package_refactoring.md) で `MaterialStore`（SHA-256管理）へ刷新され、さらに [`016_agent_delegated_web_search.md`](./016_agent_delegated_web_search.md) にて「AIからの `web_search` ツール結果は `function_response` として直接返却（自動蓄積なし）」「`/search` 単発検索結果は `[+ 資料に追加]` または `/search --save` による任意保持」へ更新されています。現行仕様は [`manuals/07_ARCHITECTURE_REFERENCE.md`](../../manuals/07_ARCHITECTURE_REFERENCE.md) を参照してください。
 
 ---
 
@@ -209,3 +209,4 @@ pytest
 | 2026-10-30 | AI Agent | 実装完了 | 初版作成および実装完了。検索結果の作業前提資料（`search_materials`）分離・蓄積・先頭インジェクションを実装。 |
 | 2026-11-08 | AI Agent | 実装完了 | ステータスを「実装完了」へ更新、対象ファイルパス表記を現行の `src/gemio/...` パッケージ構成に合わせて更新。 |
 | 2026-11-17 | AI Agent | 一部更新（#013 参照） | 設計書の3桁連番管理導入に伴い `002_search_material_integration.md` へリネームし、`#013`（`MaterialStore` 刷新）への案内注記を追加。 |
+| 2026-11-23 | AI Agent | 一部更新（#013, #016 参照） | `#016`（AI検索ツールの `function_response` 統合および `/search` の自動蓄積廃止・任意資料化）に伴い注記とステータスを更新。 |

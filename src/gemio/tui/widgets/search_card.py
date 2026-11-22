@@ -1,8 +1,8 @@
 """
-/search コマンドによる Web 検索結果を表示する SearchTurnWidget モジュール。
+/search コマンドによる単発 Web 検索結果を表示する SearchTurnWidget モジュール。
 
 検索クエリはプレーンテキストそのまま (markup=False) で表示し、
-検索回答は Markdown レンダリング、下部に出典一覧と前提資料保持ステータスを表示します。
+検索回答は Markdown レンダリング、下部に出典一覧と任意での作業前提資料への追加UIを表示します。
 """
 
 from rich.text import Text
@@ -13,36 +13,39 @@ from textual.widgets import Button, Markdown, Static
 
 from gemio.app.state import SearchOutcome
 from gemio.core.context.materials import MaterialStore
-from gemio.tui.messages import CopyTextRequested
+from gemio.tui.messages import CopyTextRequested, SaveSearchMaterialRequested
 
 
 class SearchTurnWidget(Widget):
-    """1回の Web 検索実行結果と作業前提資料への反映状態を表示するカードウィジェット。"""
+    """1回の単発 Web 検索実行結果と作業前提資料への任意追加UIを表示するカードウィジェット。"""
 
     def __init__(
         self,
         query: str,
         *,
-        is_subsequent: bool = False,
         id: str | None = None,
     ) -> None:
         super().__init__(id=id)
         self.query: str = query
-        self.is_subsequent: bool = is_subsequent
         self.response_text: str = ""
         self._outcome: SearchOutcome | None = None
         self._dom_ready: bool = False
 
     def compose(self) -> ComposeResult:
-        label = "Web Search (深掘り)" if self.is_subsequent else "Web Search"
         with Horizontal(classes="card-header-row"):
-            yield Static(label, markup=False, classes="card-role-search")
+            yield Static("Web Search", markup=False, classes="card-role-search")
             yield Static(
                 "",
                 markup=False,
                 classes="search-timestamp card-timestamp",
             )
-            yield Button("Copy", classes="copy-btn", compact=True)
+            yield Button(
+                "+ 資料に追加",
+                id="btn-save-material",
+                classes="save-mat-btn",
+                compact=True,
+            )
+            yield Button("Copy", id="btn-copy-search", classes="copy-btn", compact=True)
 
         # クエリ入力も Markdown 解釈せず生テキストそのまま表示
         yield Static(
@@ -59,11 +62,12 @@ class SearchTurnWidget(Widget):
         if self._outcome is not None:
             self._apply_outcome_to_dom(self._outcome)
         else:
+            self.query_one("#btn-save-material", Button).display = False
             self.query_one(".search-sources", Static).display = False
             self.query_one(".search-material-footer", Static).display = False
 
     def set_outcome(self, outcome: SearchOutcome) -> None:
-        """SearchOutcome を受け取り、回答本文・出典・前提資料ステータスを描画します。"""
+        """SearchOutcome を受け取り、回答本文・出典・前提資料追加ボタン/ステータスを描画します。"""
         self._outcome = outcome
         self.response_text = outcome.result.response_text or ""
         is_err = outcome.material_status in {"failed", "aborted"}
@@ -76,6 +80,18 @@ class SearchTurnWidget(Widget):
         res = outcome.result
         self.query_one(".search-timestamp", Static).update(res.created_at)
         self.query_one(".search-markdown", Markdown).update(self.response_text)
+
+        save_btn = self.query_one("#btn-save-material", Button)
+        if outcome.material_status == "unretained":
+            save_btn.label = "+ 資料に追加"
+            save_btn.disabled = False
+            save_btn.display = True
+        elif outcome.material_status in {"added", "duplicate"}:
+            save_btn.label = "資料保持済"
+            save_btn.disabled = True
+            save_btn.display = True
+        else:
+            save_btn.display = False
 
         sources_w = self.query_one(".search-sources", Static)
         if res.sources:
@@ -95,7 +111,12 @@ class SearchTurnWidget(Widget):
         footer_w = self.query_one(".search-material-footer", Static)
         footer_text = Text()
         total = outcome.total_materials
-        if outcome.material_status == "added":
+        if outcome.material_status == "unretained":
+            footer_text.append(
+                f"[単発検索] 作業前提資料として保持する場合は [+ 資料に追加] または /search --save を実行（現在 {total} 件）。",
+                style="dim",
+            )
+        elif outcome.material_status == "added":
             footer_text.append(
                 f"[資料保持] 作業前提資料 [第{total}弾] としてセッションに保持しました。（破棄: /search --clear）",
                 style="green",
@@ -107,12 +128,12 @@ class SearchTurnWidget(Widget):
             )
         elif outcome.material_status == "aborted":
             footer_text.append(
-                f"[中断] Web検索が中断されたため、作業前提資料には追加されませんでした（現在 {total} 件）。",
+                f"[中断] Web検索が中断されました（現在保持中の前提資料: {total} 件）。",
                 style="yellow",
             )
         else:
             footer_text.append(
-                f"[未保持] 検索エラーのため、作業前提資料には追加されませんでした（現在 {total} 件）。",
+                f"[エラー] 検索エラーのため結果を取得できませんでした（現在保持中の前提資料: {total} 件）。",
                 style="red",
             )
         footer_w.update(footer_text)
@@ -120,6 +141,13 @@ class SearchTurnWidget(Widget):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         event.stop()
+        if event.button.id == "btn-save-material":
+            if self._outcome is not None and self._outcome.result.succeeded:
+                self.post_message(
+                    SaveSearchMaterialRequested(self, self._outcome.result)
+                )
+            return
+
         target_text = self.response_text or self.query
         self.post_message(
             CopyTextRequested(target_text, label="検索結果")
