@@ -1,7 +1,7 @@
 # 🗂️ Gemio 設計書・技術ドキュメント一覧（インデックス）
 
 **作成日:** 2026年11月17日  
-**最終更新日:** 2026年11月21日  
+**最終更新日:** 2026年11月23日  
 **ステータス:** 運用中  
 **対象範囲:** `docs/` 配下の設計書（`design/`）、技術調査資料（`tech_docs/`）、運用ルール、および開発履歴サマリー  
 
@@ -25,9 +25,9 @@
 
 ## 🎯 レイヤー別クイック逆引き（現行コード直結の主要設計書）
 
-* **Core層（通信・モデルカタログ・コンテキスト・`ChatAgent` / `SearchAgent`・Skills・Tools）**: 👉 **[`#013`](./design/013_core_package_refactoring.md)**, **[`#015`](./design/015_dynamic_model_catalog_and_thinking.md)**（背景経緯: `#001`, `#002`, `#003`, `#011`）
+* **Core層（通信・モデルカタログ・コンテキスト・`ChatAgent` / `SearchAgent`・Skills・Tools）**: 👉 **[`#013`](./design/013_core_package_refactoring.md)**, **[`#015`](./design/015_dynamic_model_catalog_and_thinking.md)**, **[`#016`](./design/016_agent_delegated_web_search.md)**（背景経緯: `#001`, `#002`, `#003`, `#011`）
 * **Project層（ファイル探索・3段階承認・Dockerサンドボックス・`ask_user`）**: 👉 **[`#005`](./design/005_sandbox_and_developer_mode.md)**, **[`#007`](./design/007_ask_user_tool.md)**, **[`#008`](./design/008_project_exploration_tools.md)**, **[`#009`](./design/009_edit_mode.md)**
-* **App / TUI / CLI層（`GemioController`・Textual `GemioApp`・モーダル・操作体系）**: 👉 **[`#014`](./design/014_textual_tui_architecture.md)**, **[`#015`](./design/015_dynamic_model_catalog_and_thinking.md)**（背景経緯: `#004`, `#006`, `#011`, `#012`）
+* **App / TUI / CLI層（`GemioController`・Textual `GemioApp`・モーダル・操作体系）**: 👉 **[`#014`](./design/014_textual_tui_architecture.md)**, **[`#015`](./design/015_dynamic_model_catalog_and_thinking.md)**, **[`#016`](./design/016_agent_delegated_web_search.md)**（背景経緯: `#004`, `#006`, `#011`, `#012`）
 
 ---
 
@@ -52,6 +52,7 @@
 | **#013** | **[013_core_package_refactoring.md](./design/013_core_package_refactoring.md)**<br>Coreパッケージ構造全面リファクタリング | 2026-11-12 | Core / Project | ✅ **実装完了（現行）** | `GenAIClient`・`ChatAgent`・`SearchAgent` 分離、ターン履歴・SHA-256管理 `MaterialStore`・要約圧縮（`context/`）、Skills段階的開示、動的ツール基盤。 |
 | **#014** | **[014_textual_tui_architecture.md](./design/014_textual_tui_architecture.md)**<br>Textual TUI一本化・4層パッケージ再編・画面/操作設計 | 2026-11-17 | App / TUI / CLI | ✅ **実装完了（現行）** | `prompt_toolkit` 廃止とTextual完全一本化、`app`/`tui`/`cli` 再編、最小 `80×24` 対応シングルカラムUI、ユーザー生テキスト表示＋AI Markdown描画、モーダル・ターン中断設計。 |
 | **#015** | **[015_dynamic_model_catalog_and_thinking.md](./design/015_dynamic_model_catalog_and_thinking.md)**<br>動的モデルカタログ・スペック取得と Thinking 統合 | 2026-11-21 | Core / App / TUI | ✅ **実装完了（現行）** | `models.list` / `models.get` による動的モデル一覧・スペックキャッシュ基盤（`ModelInfo`）、Thinking 対応モデルの自動判定とリアルタイム思考ログ表示、`ModelSelectModal` の動的化。 |
+| **#016** | **[016_agent_delegated_web_search.md](./design/016_agent_delegated_web_search.md)**<br>作業エージェント連携型Web検索と検索スイッチ | 2026-11-23 | Core / App / TUI | 📝 設計完了<br>(実装準備中) | `ChatAgent` からステートレス `SearchAgent` を呼ぶ `web_search` ツール統合、全モード共通の全文常時確認、`+WEB`/`-WEB` バッジ（デフォルトON）、`/search` 単発検索＋任意資料追加。 |
 
 ---
 
@@ -83,3 +84,4 @@
 | 2026-11-17 | AI Agent | 運用中 | 初版作成。`docs/design/` の3桁連番（`001`〜`013`）およびステータス管理の導入に伴い、`docs/` 全体の目次インデックスとレイヤー別逆引きガイドを整備。 |
 | 2026-11-17 | AI Agent | 運用中 | `#014`（`014_textual_tui_architecture.md`）の設計作成および実装完了に伴い、`#014` を `実装完了（現行）`、`#012` を `置換済み（Superseded by #014）` に更新。 |
 | 2026-11-21 | AI Agent | 運用中 | `docs/tech_docs/google_genai_models_reference.md` の追加および `#015`（`015_dynamic_model_catalog_and_thinking.md`）の作成・実装完了に伴い一覧表を更新。 |
+| 2026-11-23 | AI Agent | 運用中 | `#016`（`016_agent_delegated_web_search.md`）の作成に伴い一覧表・逆引きガイドを更新。 |
