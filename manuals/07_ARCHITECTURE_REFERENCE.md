@@ -1,7 +1,7 @@
 # 🏗️ Gemio アーキテクチャ & 内部仕様リファレンスマニュアル
 
 **作成日:** 2026年11月14日  
-**最終更新日:** 2026年11月21日  
+**最終更新日:** 2026年11月22日  
 **ステータス:** 運用中  
 **対象システム:** Gemio 全パッケージ (`src/gemio/core/`, `src/gemio/project/`, `src/gemio/app/`, `src/gemio/tui/`, `src/gemio/cli/`, `src/gemio/__init__.py`)  
 
@@ -480,7 +480,7 @@ PromptSubmitted ➔ GemioApp._start_chat_worker()
 * **アプリケーション制御 (`app`)**: `AppConfig`, `AppStartupError`, `GemioController`, `InteractionHandler`, `SessionSnapshot`, `SearchOutcome`, `parse_slash_command`, `validate_project_dir`, `APP_DEFAULT_MAX_ITERATIONS`, `APP_SEARCH_GUIDANCE_INSTRUCTION`
 * **エージェント & クライアント**: `GenAIClient`, `TokenUsageTracker`, `ChatAgent`, `ChatTurnResult`, `SearchAgent`, `SearchResult`
 * **コンテキスト & セッション**: `ChatSession`, `ChatHistory`, `ChatTurn`, `MaterialStore`, `ReferenceMaterial`, `MaterialKind`, `ContextCompactor`, `CompactionResult`, `compute_sha256`
-* **プロンプト & モデル設定**: `SystemPromptComposer`, `DEFAULT_SYSTEM_INSTRUCTION`, `DEFAULT_SEARCH_INSTRUCTION`, `DEFAULT_COMPACTION_INSTRUCTION`, `PROJECT_SYSTEM_INSTRUCTION`, `DEVELOPER_PROJECT_INSTRUCTION`, `DEFAULT_AI_MODEL_NAME`, `MODEL_PRESETS`, `MODEL_ALIASES`, `ModelInfo`, `normalize_model_id`, `resolve_model_name`, `is_text_generation_model`, `is_thinking_supported`, `model_info_from_sdk`, `get_fallback_model_catalog`, `sort_model_catalog`, `AgentLogCategory`
+* **プロンプト & モデル設定**: `SystemPromptComposer`, `DEFAULT_SYSTEM_INSTRUCTION`, `DEFAULT_SEARCH_INSTRUCTION`, `DEFAULT_COMPACTION_INSTRUCTION`, `PROJECT_SYSTEM_INSTRUCTION`, `DEVELOPER_PROJECT_INSTRUCTION`, `DEFAULT_AI_MODEL_NAME`, `MIN_SUPPORTED_GEMINI_MAJOR`, `EXCLUDED_MODEL_KEYWORDS`, `MODEL_PRESETS`, `MODEL_ALIASES`, `ModelInfo`, `extract_model_version`, `normalize_model_id`, `resolve_model_name`, `is_text_generation_model`, `is_thinking_supported`, `model_info_from_sdk`, `get_fallback_model_catalog`, `sort_model_catalog`, `AgentLogCategory`
 * **Skills & ツール基盤**: `SkillLoader`, `SkillManager`, `SkillSpec`, `parse_skill_markdown`, `ToolRegistry`, `Toolset`, `ToolSpec`, `ToolProvider`, `StaticToolProvider`, `DynamicToolsetProvider`, `get_builtin_toolset`, `load_project_toolsets`, `agent_tools`, `get_current_date`, `get_current_time`
 * **プロジェクト & セキュリティ**: `Project`, `DeveloperProject`, `APPROVAL_MODE_NORMAL`, `APPROVAL_MODE_EDIT`, `APPROVAL_MODE_TRUST`, `AgentExecutionAborted`, `SandboxSecurityError`, `scrub_environment`, `is_sensitive_env_key`, `truncate_command_output`, `summarize_text_for_display`
 
@@ -556,3 +556,4 @@ finally:
 | 2026-11-16 | AI Agent | 運用中 | システムインストラクションの3層責務分離（`project/prompts.py`, `cli/prompts.py` の新設、`Project.get_system_instruction()` の導入、`core` からの `dev_mode` 廃止）および `__version__`（`v0.1.1`）公開APIを反映。 |
 | 2026-11-17 | AI Agent | 運用中 | Textual TUI 一本化・4層パッケージ再編（`#014` / `v0.2.0`）に伴い、4層単方向依存（`cli` ➔ `tui` ➔ `app` ➔ `project` ➔ `core`）、`GemioController`、`GemioApp` / `ThreadModalBridge` / 9種モーダル、安全なターン中断、および公開APIを更新。 |
 | 2026-11-21 | AI Agent | 運用中 | 動的モデルカタログ・スペックキャッシュと Thinking 自動統合（`#015`：`ModelInfo`、`GenAIClient.list_available_models` / `supports_thinking`、`AgentLogCategory.THOUGHT`、`ModelSelectModal` 動的更新）およびクロスプラットフォーム向けキーバインド刷新（`Ctrl+J`送信・`F4`入力欄移動・`Ctrl+Y` Redo維持）を反映。 |
+| 2026-11-22 | AI Agent | 運用中 | 動的モデル抽出条件の厳密化（`gemini-3` 以上＋7除外語部分一致除外）、ソート仕様変更（動的優先➔新バージョン順・同一バージョン順序維持）、デフォルトモデル `gemini-4-neon` および `carbon`/`hydrogen` 追加、ならびに `ModelSelectModal` のワイド化・余白解消を反映。 |

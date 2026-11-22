@@ -310,13 +310,13 @@ async def test_help_model_tokens_modals_and_command_palette(tmp_path):
             await pilot.pause()
             assert not isinstance(app.screen, HelpModal)
 
-            # 2. F2 -> ModelSelectModal -> '2' キーで gemini-4-argon を選択
+            # 2. F2 -> ModelSelectModal -> '2' キーで gemini-4-carbon を選択
             await pilot.press("f2")
             await pilot.pause()
             assert isinstance(app.screen, ModelSelectModal)
             await pilot.press("2")
             await pilot.pause()
-            assert ctrl.current_model == "gemini-4-argon"
+            assert ctrl.current_model == "gemini-4-carbon"
 
             # 3. /tokens -> TokenUsageModal -> [資料含め全クリア] ボタン押下
             app.composer.editor.insert("/tokens")
@@ -391,7 +391,7 @@ async def test_modals_fit_content_height_and_keep_buttons_visible(tmp_path):
                     IterationLimitModal(),
                     TrustConsentModal(),
                     ApiKeyModal(),
-                    ModelSelectModal("gemini-flash-latest"),
+                    ModelSelectModal("gemini-4-neon"),
                     SandboxStatusModal(ctrl.inspect_sandbox()),
                     SandboxStatusModal(dev_small),
                     TokenUsageModal(ctrl.get_token_usage()),
@@ -410,12 +410,12 @@ async def test_modals_fit_content_height_and_keep_buttons_visible(tmp_path):
                     await pilot.pause()
 
 
-async def test_model_select_modal_fetches_dynamic_catalog_with_thinking_and_context_badges(
+async def test_model_select_modal_fetches_dynamic_catalog_and_fills_dialog_without_bottom_gap(
     tmp_path,
 ):
     """
-    F2 (ModelSelectModal) が API の models.list() から動的モデル一覧・Thinking有無・入力トークン上限を取得し、
-    OptionList を更新して選択適用できること
+    F2 (ModelSelectModal) が API の models.list() から gemini-3 以上のテキスト生成モデルのみを動的取得して
+    バージョン降順で更新し、ダイアログ下部に不要な空白を残さず1行ずつ整列表示して選択適用できること
     """
     from textual.widgets import OptionList
 
@@ -425,27 +425,57 @@ async def test_model_select_modal_fetches_dynamic_catalog_with_thinking_and_cont
         mock_sdk_cls.return_value = mock_sdk
         mock_sdk.models.list.return_value = [
             types.Model(
-                name="models/gemini-2.5-pro",
-                display_name="Gemini 2.5 Pro",
-                description="Advanced reasoning model",
-                supported_actions=["generateContent"],
-                thinking=True,
-                input_token_limit=1_048_576,
-            ),
-            types.Model(
-                name="models/gemini-2.0-flash",
-                display_name="Gemini 2.0 Flash",
+                name="models/gemini-3.8-flash",
+                display_name="Gemini 3.8 Flash",
                 description="Fast standard model",
                 supported_actions=["generateContent"],
                 thinking=False,
                 input_token_limit=1_048_576,
             ),
+            types.Model(
+                name="models/gemini-4-carbon",
+                display_name="Gemini 4 Carbon",
+                description="Most capable frontier reasoning model for complex engineering tasks",
+                supported_actions=["generateContent"],
+                thinking=True,
+                input_token_limit=2_097_152,
+            ),
+            types.Model(
+                name="models/gemini-4-neon",
+                display_name="Gemini 4 Neon",
+                description="Balanced flagship model for daily engineering tasks",
+                supported_actions=["generateContent"],
+                thinking=True,
+                input_token_limit=1_048_576,
+            ),
+            # 以下は除外対象（gemini-2系、live、tts、nano-banana 等）
+            types.Model(
+                name="models/gemini-2.5-pro",
+                supported_actions=["generateContent"],
+                thinking=True,
+            ),
+            types.Model(
+                name="models/gemini-4-live-preview",
+                supported_actions=["generateContent"],
+                thinking=False,
+            ),
+            types.Model(
+                name="models/gemini-4-tts-preview",
+                supported_actions=["generateContent"],
+                thinking=False,
+            ),
+            types.Model(
+                name="models/nano-banana-pro-preview",
+                supported_actions=["generateContent"],
+                thinking=False,
+            ),
         ]
 
         ctrl = GemioController(cfg)
+        assert ctrl.current_model == "gemini-4-neon"
         app = GemioApp(ctrl)
 
-        async with app.run_test(size=(90, 28)) as pilot:
+        async with app.run_test(size=(120, 40)) as pilot:
             await pilot.press("f2")
             for _ in range(30):
                 await pilot.pause(0.02)
@@ -454,14 +484,41 @@ async def test_model_select_modal_fetches_dynamic_catalog_with_thinking_and_cont
             await pilot.pause()
 
             assert isinstance(app.screen, ModelSelectModal)
+            dlg = app.screen.query_one("#model-select-dialog")
             opt_list = app.screen.query_one("#model-option-list", OptionList)
-            assert opt_list.option_count == 2
-            first_prompt_plain = str(opt_list.get_option_at_index(0).prompt)
-            assert "gemini-2.5-pro" in first_prompt_plain
-            assert "[Think]" in first_prompt_plain
-            assert "[1M]" in first_prompt_plain
+            btns = app.screen.query_one(".modal-buttons")
 
-            # '1' キーで動的取得した gemini-2.5-pro へ切り替えられること
+            assert opt_list.option_count == 3
+            # 1項目1行で折り返しが発生していないこと
+            assert opt_list.virtual_size.height == 3
+            # ダイアログ下枠のすぐ上にボタン行が配置され、下部に無駄な余白がないこと
+            assert dlg.region.contains_region(btns.region)
+            bottom_gap = (dlg.region.y + dlg.region.height - 1) - (
+                btns.region.y + btns.region.height
+            )
+            assert bottom_gap == 0
+
+            first_prompt_plain = str(opt_list.get_option_at_index(0).prompt)
+            second_prompt_plain = str(opt_list.get_option_at_index(1).prompt)
+            third_prompt_plain = str(opt_list.get_option_at_index(2).prompt)
+            assert "gemini-4-carbon" in first_prompt_plain
+            assert "[Think]" in first_prompt_plain
+            assert "[2M]" in first_prompt_plain
+            assert "gemini-4-neon" in second_prompt_plain
+            assert "gemini-3.8-flash" in third_prompt_plain
+
+            # '1' キーで動的取得した gemini-4-carbon へ切り替えられること
             await pilot.press("1")
             await pilot.pause()
-            assert ctrl.current_model == "gemini-2.5-pro"
+            assert ctrl.current_model == "gemini-4-carbon"
+
+            # 直接入力欄から gemini-flash-latest を入力してもそのまま切り替えられること
+            await pilot.press("f2")
+            await pilot.pause()
+            assert isinstance(app.screen, ModelSelectModal)
+            custom_in = app.screen.query_one("#model-custom-input", Input)
+            custom_in.focus()
+            custom_in.value = "gemini-flash-latest"
+            await pilot.press("enter")
+            await pilot.pause()
+            assert ctrl.current_model == "gemini-flash-latest"

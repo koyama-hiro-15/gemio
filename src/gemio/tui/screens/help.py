@@ -31,7 +31,7 @@ _COMMANDS_MD = """\
 ### スラッシュコマンド一覧
 
 * **`/help`** (`/h`, `help`, `/info`) — このヘルプ画面を表示します。
-* **`/model [名前]`** — AIモデルを選択画面または直接指定（例: `/model argon`, `/model 3.8`, `/model lite`）で切り替えます。
+* **`/model [名前]`** — AIモデルを選択画面または直接指定（例: `/model neon`, `/model carbon`, `/model hydrogen`, `/model 3.8`）で切り替えます。
 * **`/edit [on|off]`** — エディットモード（作成・編集は自動承認、削除とコマンド実行は都度確認）を切り替えます。
 * **`/trust [on|off]`** (`/auto`) — トラストモード（事前同意の上で変更操作を自動承認）を切り替えます。
 * **`/sandbox`** (`/status`, `/container`) — サンドボックス環境設定およびマウント保護状態（`ls -la` 相当）を診断します。

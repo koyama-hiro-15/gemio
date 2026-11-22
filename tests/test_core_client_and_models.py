@@ -5,7 +5,17 @@ from gemio.core.client import GenAIClient, TokenUsageTracker
 from gemio.core.models import (
     AgentLogCategory,
     DEFAULT_AI_MODEL_NAME,
+    EXCLUDED_MODEL_KEYWORDS,
+    MODEL_PRESETS,
+    ModelInfo,
+    extract_model_version,
+    get_fallback_model_catalog,
+    is_text_generation_model,
+    is_thinking_supported,
+    model_info_from_sdk,
+    normalize_model_id,
     resolve_model_name,
+    sort_model_catalog,
 )
 
 
@@ -28,14 +38,22 @@ def _make_usage(
 
 
 def test_resolve_model_name_aliases_case_and_passthrough():
-    """モデル名のエイリアス解決、大文字小文字・空白の正規化、および未知モデルのパススルーが正しく動作すること"""
-    assert DEFAULT_AI_MODEL_NAME == "gemini-flash-latest"
+    """モデル名のエイリアス解決、Gemini 4 新モデル群、gemini-flash-latest 直接・エイリアス互換が正しく動作すること"""
+    assert DEFAULT_AI_MODEL_NAME == "gemini-4-neon"
+    assert resolve_model_name("default") == "gemini-4-neon"
+    assert resolve_model_name("neon") == "gemini-4-neon"
+    assert resolve_model_name("gemini-4") == "gemini-4-neon"
+    assert resolve_model_name("4") == "gemini-4-neon"
+    assert resolve_model_name("carbon") == "gemini-4-carbon"
+    assert resolve_model_name("argon") == "gemini-4-argon"
+    assert resolve_model_name("hydrogen") == "gemini-4-hydrogen"
+
+    # gemini-flash-latest はプリセット・エイリアスから削除せず、直接入力時もそのまま処理されること
+    assert resolve_model_name("gemini-flash-latest") == "gemini-flash-latest"
     assert resolve_model_name("flash") == "gemini-flash-latest"
     assert resolve_model_name("latest") == "gemini-flash-latest"
-    assert resolve_model_name("default") == "gemini-flash-latest"
-    assert resolve_model_name("argon") == "gemini-4-argon"
-    assert resolve_model_name("gemini-4") == "gemini-4-argon"
-    assert resolve_model_name("4") == "gemini-4-argon"
+    assert resolve_model_name("flash-latest") == "gemini-flash-latest"
+
     assert resolve_model_name("flash-3.8") == "gemini-3.8-flash"
     assert resolve_model_name("3.8") == "gemini-3.8-flash"
     assert resolve_model_name("flash-3.6") == "gemini-3.6-flash"
@@ -46,9 +64,23 @@ def test_resolve_model_name_aliases_case_and_passthrough():
     assert resolve_model_name("3.1-lite") == "gemini-3.1-flash-lite"
     assert resolve_model_name("3.1") == "gemini-3.1-flash-lite"
 
-    assert resolve_model_name("  ARGON  ") == "gemini-4-argon"
+    assert resolve_model_name("  CARBON  ") == "gemini-4-carbon"
     assert resolve_model_name("Flash-3.8") == "gemini-3.8-flash"
     assert resolve_model_name("  custom-fine-tuned-model  ") == "custom-fine-tuned-model"
+
+    preset_ids = [m_id for m_id, _ in MODEL_PRESETS]
+    for expected_id in (
+        "gemini-4-neon",
+        "gemini-4-carbon",
+        "gemini-4-argon",
+        "gemini-4-hydrogen",
+        "gemini-3.8-flash",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.1-flash-lite",
+        "gemini-flash-latest",
+    ):
+        assert expected_id in preset_ids
 
     assert AgentLogCategory.TOOL == "tool"
     assert AgentLogCategory.SEARCH == "search"
@@ -67,12 +99,15 @@ def test_genai_client_initialization_model_switching_and_retry():
         mock_sdk = MagicMock()
         mock_sdk_cls.return_value = mock_sdk
 
-        client = GenAIClient(model_name="flash")
+        client = GenAIClient()
         mock_sdk_cls.assert_called_once_with()
+        assert client.model_name == "gemini-4-neon"
+
+        client.set_model("flash")
         assert client.model_name == "gemini-flash-latest"
 
-        client.set_model("argon")
-        assert client.model_name == "gemini-4-argon"
+        client.set_model("carbon")
+        assert client.model_name == "gemini-4-carbon"
 
         ok_resp = MagicMock(
             text="回復しました",
@@ -147,22 +182,14 @@ def test_token_usage_tracker_separates_chat_search_and_compaction_sources():
     assert snap3["cumulative_total_tokens"] == 2800 + 700 + 2100
 
 
-def test_models_module_has_no_sdk_dependency_and_filters_text_and_thinking_models():
+def test_models_module_has_no_sdk_dependency_and_filters_gemini3_plus_text_models():
     """
     1. core/models.py が google.genai 等の外部SDKに依存しないこと
-    2. ModelInfo 変換、テキスト生成モデル抽出フィルタ（TTS/Image/Embedding除外）、
-       および Thinking 対応の厳密判定（MagicMock 耐性含む）が正確に動作すること
+    2. gemini-3 以上 + generateContent 対応 + 7種の除外キーワード不含の条件で正確に絞り込めること
+    3. Thinking 対応の厳密判定（MagicMock 耐性含む）およびソート条件（動的優先 -> 新バージョン優先、同一バージョン順序維持）が動作すること
     """
     import ast
     from pathlib import Path
-
-    from gemio.core.models import (
-        ModelInfo,
-        is_text_generation_model,
-        is_thinking_supported,
-        model_info_from_sdk,
-        normalize_model_id,
-    )
 
     models_py = Path(__file__).resolve().parent.parent / "src" / "gemio" / "core" / "models.py"
     tree = ast.parse(models_py.read_text(encoding="utf-8"))
@@ -175,58 +202,120 @@ def test_models_module_has_no_sdk_dependency_and_filters_text_and_thinking_model
             imported_roots.add(node.module.split(".")[0])
     assert "google" not in imported_roots
 
-    assert normalize_model_id("models/gemini-2.5-flash") == "gemini-2.5-flash"
+    assert normalize_model_id("models/gemini-4-neon") == "gemini-4-neon"
     assert (
-        normalize_model_id("publishers/google/models/gemini-2.5-pro")
-        == "gemini-2.5-pro"
+        normalize_model_id("publishers/google/models/gemini-3.8-flash")
+        == "gemini-3.8-flash"
     )
-    assert resolve_model_name("models/gemini-2.5-flash") == "gemini-2.5-flash"
+    assert extract_model_version("models/gemini-4-neon") == (4,)
+    assert extract_model_version("gemini-3.8-flash") == (3, 8)
+    assert extract_model_version("gemini-flash-latest") == ()
+    assert extract_model_version("gemma-3-27b-it") == ()
 
-    m_text_think = SimpleNamespace(
-        name="models/gemini-2.5-flash",
-        display_name="Gemini 2.5 Flash",
-        description="Fast thinking model",
+    # 採用対象（gemini-3以上 かつ generateContent あり かつ 除外キーワードなし）
+    m_v4 = SimpleNamespace(
+        name="models/gemini-4-neon",
+        display_name="Gemini 4 Neon",
+        description="Balanced reasoning model",
         supported_actions=["generateContent", "countTokens"],
         thinking=True,
         input_token_limit=1_048_576,
         output_token_limit=65_536,
     )
-    m_embed = SimpleNamespace(
-        name="models/text-embedding-004",
-        supported_actions=["embedContent"],
-        thinking=False,
-    )
-    m_tts = SimpleNamespace(
-        name="models/gemini-2.5-flash-preview-tts",
+    m_v38 = SimpleNamespace(
+        name="models/gemini-3.8-flash",
         supported_actions=["generateContent"],
-        thinking=False,
+        thinking=True,
     )
-    m_image = SimpleNamespace(
-        name="models/gemini-2.5-flash-image-generation",
-        supported_actions=["generateContent"],
-        thinking=False,
-    )
+    assert is_text_generation_model(m_v4) is True
+    assert is_text_generation_model(m_v38) is True
 
-    assert is_text_generation_model(m_text_think) is True
-    assert is_text_generation_model(m_embed) is False
-    assert is_text_generation_model(m_tts) is False
-    assert is_text_generation_model(m_image) is False
+    # 除外対象: gemini-2以下 / gemini-直後が非数字 / 非Gemini / generateContentなし
+    for invalid_name, actions in [
+        ("models/gemini-2.5-pro", ["generateContent"]),
+        ("models/gemini-2.5-flash", ["generateContent"]),
+        ("models/gemini-2.0-flash", ["generateContent"]),
+        ("models/gemini-2-flash", ["generateContent"]),
+        ("models/gemini-1.5-pro", ["generateContent"]),
+        ("models/gemini-flash-latest", ["generateContent"]),
+        ("models/gemini-exp-1206", ["generateContent"]),
+        ("models/gemma-3-27b-it", ["generateContent"]),
+        ("models/gemini-4-embedding", ["embedContent"]),
+    ]:
+        assert (
+            is_text_generation_model(
+                SimpleNamespace(name=invalid_name, supported_actions=actions)
+            )
+            is False
+        ), f"Expected {invalid_name} to be filtered out"
+
+    # 除外対象: 7種の除外キーワード部分一致（中間・末尾いずれも除外）
+    assert EXCLUDED_MODEL_KEYWORDS == (
+        "tts",
+        "image",
+        "live",
+        "transcribe",
+        "translate",
+        "omni",
+        "nano-banana",
+    )
+    for kw in EXCLUDED_MODEL_KEYWORDS:
+        m_mid = SimpleNamespace(
+            name=f"models/gemini-4-{kw}-preview",
+            supported_actions=["generateContent"],
+        )
+        m_end = SimpleNamespace(
+            name=f"models/gemini-3.8-flash-{kw}",
+            supported_actions=["generateContent"],
+        )
+        assert is_text_generation_model(m_mid) is False
+        assert is_text_generation_model(m_end) is False
+
     assert is_text_generation_model(MagicMock()) is False
 
-    assert is_thinking_supported(m_text_think) is True
-    assert is_thinking_supported(m_embed) is False
+    assert is_thinking_supported(m_v4) is True
+    assert is_thinking_supported(SimpleNamespace(thinking=False)) is False
     assert is_thinking_supported(SimpleNamespace(thinking=None)) is False
     assert is_thinking_supported(MagicMock()) is False
 
-    info: ModelInfo = model_info_from_sdk(m_text_think)
-    assert info.model_id == "gemini-2.5-flash"
+    info: ModelInfo = model_info_from_sdk(m_v4)
+    assert info.model_id == "gemini-4-neon"
+    assert info.is_dynamic is True
     assert info.supports_thinking is True
     assert info.format_context_limit() == "1M"
+
+    # ソート検証: 1. 動的取得モデル優先 -> 2. バージョン降順（同一バージョン内の順序は維持）
+    mixed = [
+        ModelInfo(model_id="gemini-4-carbon", is_dynamic=False),
+        ModelInfo(model_id="gemini-3.5-flash-lite", is_dynamic=True),
+        ModelInfo(model_id="gemini-4-hydrogen", is_dynamic=True),
+        ModelInfo(model_id="gemini-3.8-flash", is_dynamic=True),
+        ModelInfo(model_id="gemini-4-neon", is_dynamic=True),
+        ModelInfo(model_id="gemini-flash-latest", is_dynamic=False),
+        ModelInfo(model_id="gemini-3.1-flash-lite", is_dynamic=False),
+    ]
+    sorted_ids = [m.model_id for m in sort_model_catalog(mixed)]
+    assert sorted_ids == [
+        # 1. is_dynamic=True 群（バージョン降順、同じ4系内は hydrogen -> neon の入力順維持）
+        "gemini-4-hydrogen",
+        "gemini-4-neon",
+        "gemini-3.8-flash",
+        "gemini-3.5-flash-lite",
+        # 2. is_dynamic=False 群（バージョン降順）
+        "gemini-4-carbon",
+        "gemini-3.1-flash-lite",
+        "gemini-flash-latest",
+    ]
+
+    fallback_catalog = get_fallback_model_catalog()
+    assert all(not m.is_dynamic for m in fallback_catalog)
+    assert fallback_catalog[0].model_id == "gemini-4-neon"
+    assert fallback_catalog[-1].model_id == "gemini-flash-latest"
 
 
 def test_genai_client_dynamic_model_catalog_caching_and_thinking_fallback():
     """
-    1. list_available_models() がテキスト生成モデルのみを抽出し、個別キャッシュにも登録すること
+    1. list_available_models() が gemini-3 以上のテキスト生成モデルのみを抽出し、バージョン降順で個別キャッシュにも登録すること
     2. supports_thinking() がキャッシュを利用して重複APIコールを行わないこと
     3. ThinkingConfig が万一 400 エラーで拒否された際に自動で設定を外して再試行すること
     """
@@ -238,21 +327,51 @@ def test_genai_client_dynamic_model_catalog_caching_and_thinking_fallback():
 
         mock_sdk.models.list.return_value = [
             types.Model(
-                name="models/gemini-2.5-pro",
-                display_name="Gemini 2.5 Pro",
-                supported_actions=["generateContent"],
-                thinking=True,
-                input_token_limit=1_048_576,
-            ),
-            types.Model(
-                name="models/gemini-2.0-flash-lite",
-                display_name="Gemini 2.0 Flash Lite",
+                name="models/gemini-3.5-flash-lite",
+                display_name="Gemini 3.5 Flash Lite",
                 supported_actions=["generateContent"],
                 thinking=False,
                 input_token_limit=1_048_576,
             ),
             types.Model(
-                name="models/gemini-tts",
+                name="models/gemini-4-carbon",
+                display_name="Gemini 4 Carbon",
+                supported_actions=["generateContent"],
+                thinking=True,
+                input_token_limit=2_097_152,
+            ),
+            types.Model(
+                name="models/gemini-4-neon",
+                display_name="Gemini 4 Neon",
+                supported_actions=["generateContent"],
+                thinking=True,
+                input_token_limit=1_048_576,
+            ),
+            types.Model(
+                name="models/gemini-3.8-flash",
+                display_name="Gemini 3.8 Flash",
+                supported_actions=["generateContent"],
+                thinking=True,
+                input_token_limit=1_048_576,
+            ),
+            # 以下はすべて除外されるべきモデル
+            types.Model(
+                name="models/gemini-2.5-pro",
+                supported_actions=["generateContent"],
+                thinking=True,
+            ),
+            types.Model(
+                name="models/gemini-4-tts",
+                supported_actions=["generateContent"],
+                thinking=False,
+            ),
+            types.Model(
+                name="models/gemini-4-image-gen",
+                supported_actions=["generateContent"],
+                thinking=False,
+            ),
+            types.Model(
+                name="models/gemini-flash-latest",
                 supported_actions=["generateContent"],
                 thinking=False,
             ),
@@ -262,17 +381,22 @@ def test_genai_client_dynamic_model_catalog_caching_and_thinking_fallback():
             ),
         ]
 
-        client = GenAIClient(model_name="gemini-2.5-pro")
+        client = GenAIClient(model_name="gemini-4-carbon")
         catalog = client.list_available_models()
         ids = [m.model_id for m in catalog]
-        assert ids == ["gemini-2.5-pro", "gemini-2.0-flash-lite"]
+        assert ids == [
+            "gemini-4-carbon",
+            "gemini-4-neon",
+            "gemini-3.8-flash",
+            "gemini-3.5-flash-lite",
+        ]
         assert mock_sdk.models.list.call_count == 1
 
         # キャッシュ済みのため再度の list() や models.get() なしで判定できること
         assert client.list_available_models() == catalog
         assert mock_sdk.models.list.call_count == 1
-        assert client.supports_thinking("gemini-2.5-pro") is True
-        assert client.supports_thinking("gemini-2.0-flash-lite") is False
+        assert client.supports_thinking("gemini-4-carbon") is True
+        assert client.supports_thinking("gemini-3.5-flash-lite") is False
         assert mock_sdk.models.get.call_count == 0
 
         # 万一 ThinkingConfig 指定で 400 INVALID_ARGUMENT が返った場合、自動で外して成功すること
@@ -290,4 +414,4 @@ def test_genai_client_dynamic_model_catalog_caching_and_thinking_fallback():
         second_cfg = mock_sdk.models.generate_content.call_args_list[1].kwargs["config"]
         assert "thinking_config" not in second_cfg
         # 以降は自動的に Thinking 無効として記録されること
-        assert client.supports_thinking("gemini-2.5-pro") is False
+        assert client.supports_thinking("gemini-4-carbon") is False

@@ -1,7 +1,7 @@
 # #015 動的モデルカタログ・スペック取得と Thinking（思考ログ）統合 設計書
 
 **作成日:** 2026年11月21日  
-**最終更新日:** 2026年11月21日  
+**最終更新日:** 2026年11月22日  
 **ステータス:** 実装完了（現行）  
 **対象システム:** `src/gemio/core/` (`models.py`, `client.py`, `agent.py`), `src/gemio/app/controller.py`, `src/gemio/tui/` (`screens/model.py`, `widgets/turn.py`, `commands_palette.py`)  
 
@@ -46,29 +46,36 @@
 ```python
 @dataclass(frozen=True)
 class ModelInfo:
-    model_id: str                           # 正規化済みモデルID（例: "gemini-2.5-flash"）
-    display_name: str = ""                  # 表示名（例: "Gemini 2.5 Flash"）
+    model_id: str                           # 正規化済みモデルID（例: "gemini-4-neon"）
+    display_name: str = ""                  # 表示名（例: "Gemini 4 Neon"）
     description: str = ""                   # モデルの説明文
     supports_thinking: bool = False         # Thinking（思考機能）対応可否
     input_token_limit: int | None = None    # 最大入力トークン上限（例: 1048576）
     output_token_limit: int | None = None   # 最大出力トークン上限（例: 65536）
     supported_actions: tuple[str, ...] = () # 対応アクション（例: ("generateContent", ...)）
+    is_dynamic: bool = False                # APIから動的取得されたモデルかどうか
 ```
 
-### 3.2 テキスト生成モデルの抽出と Thinking 判定ルール
+### 3.2 テキスト生成モデルの抽出・ソートと Thinking 判定ルール
 
-技術調査資料（[`docs/tech_docs/google_genai_models_reference.md`](../tech_docs/google_genai_models_reference.md)）に基づき、以下の基準で判定を行う。
+技術調査資料（[`docs/tech_docs/google_genai_models_reference.md`](../tech_docs/google_genai_models_reference.md)）および実運用でのモデル群に基づき、以下の基準で判定・整列を行う。
 
-1. **モデルIDの正規化 (`normalize_model_id`)**:
+1. **モデルIDの正規化 (`normalize_model_id`) とバージョン抽出 (`extract_model_version`)**:
    * API が返すリソース名 `'models/gemini-...'` または `'publishers/google/models/...'` からプレフィックスを除去し、純粋なモデルID（`'gemini-...'`）へ統一する。
-2. **テキスト生成対応モデルの抽出 (`is_text_generation_model`)**:
-   * `supported_actions` に `"generateContent"` が含まれていることを必須条件とする（埋め込み専用モデル等を除外）。
-   * チャット対話用途に適さない音声合成特化（末尾 `-tts`）および画像生成特化（`-image` を含む）モデルを既定で除外する。
-3. **Thinking 対応可否の厳密判定 (`is_thinking_supported`)**:
+   * `^gemini-(\d+(?:\.\d+)*)` により `'gemini-'` 直後の数値バージョンタプル（例: `gemini-4-neon` ➔ `(4,)`, `gemini-3.8-flash` ➔ `(3, 8)`）を抽出する。
+2. **対象世代テキスト生成モデルの抽出 (`is_text_generation_model`)**:
+   * `supported_actions` に `"generateContent"` が含まれていることを必須条件とする。
+   * `'gemini-'` の直後に数字が来る名前で、かつメジャーバージョンが **`3` 以上**（`MIN_SUPPORTED_GEMINI_MAJOR = 3`）のモデルのみを対象とする（非推奨となった `gemini-2` 系以下や非Gemini系モデルを除外）。
+   * チャット対話用途に適さない特化モデルとして、モデル名（小文字正規化後）に `EXCLUDED_MODEL_KEYWORDS`（`"tts"`, `"image"`, `"live"`, `"transcribe"`, `"translate"`, `"omni"`, `"nano-banana"`）のいずれかを含むものを部分一致で除外する。
+3. **カタログ整列仕様 (`sort_model_catalog`)**:
+   * **第1優先**: 動的取得したモデル（`is_dynamic=True`）を優先。
+   * **第2優先**: モデルのバージョン番号が大きいほう（新モデル）を優先（桁数を揃えたバージョン数値タプル降順）。
+   * 同一バージョン内のモデル同士はソートせず、元の順序を維持する（Pythonの安定ソートを利用）。
+4. **Thinking 対応可否の厳密判定 (`is_thinking_supported`)**:
    * `getattr(sdk_model, "thinking", None) is True` により厳密な `bool` 判定を行う。
    * `None` や `False` に加え、単体テスト時の未設定 `MagicMock` オブジェクトに対しても誤って `True` と判定しない安全な設計とする。
-4. **短縮エイリアスとフォールバックカタログの維持**:
-   * CLI 引数（`--model flash`）やコマンド手入力（`/model lite`）の利便性を保つため、`MODEL_ALIASES` / `resolve_model_name()` は引き続き維持する。
+5. **デフォルトモデル・短縮エイリアスとフォールバックカタログ**:
+   * デフォルト選択モデル（`DEFAULT_AI_MODEL_NAME`）は最新のバランス型モデル `"gemini-4-neon"` とし、Gemini 4 シリーズ（`gemini-4-neon`, `gemini-4-carbon`, `gemini-4-argon`, `gemini-4-hydrogen`）および既存の 3 系・`gemini-flash-latest` を `MODEL_PRESETS` / `MODEL_ALIASES` に保持する（直接入力・エイリアス指定時は `gemini-flash-latest` 等もそのまま処理）。
    * API キー未入力状態（コンテナ起動直後等）、オフライン環境、およびモックテスト環境でも TUI が常に動作するよう、`MODEL_PRESETS` から構築する `get_fallback_model_catalog()` を備える。
 
 ---
@@ -84,7 +91,7 @@ class ModelInfo:
   1. `_cached_model_list` が存在し `force_refresh=False` であればキャッシュのコピーを返す。
   2. `models.list(config={"page_size": 100, "http_options": {"api_version": "v1beta"}})` で全ページを走査し、`is_text_generation_model()` を満たすモデルを抽出する。
   3. 取得した各 `ModelInfo` は個別の `_model_info_cache` にも同時登録する。これにより、一覧取得後にどのモデルへ切り替えても追加の `models.get()` リクエストが発生しない。
-  4. デフォルトモデル（`gemini-flash-latest`）や主要モデルが先頭付近に来るよう整列して返却する。取得失敗時や該当0件時は `get_fallback_model_catalog()` を返す。
+  4. `sort_model_catalog()` により動的取得モデル優先・バージョン番号降順（同一バージョン内は元の順序維持）へ整列して返却する。取得失敗時や該当0件時は `get_fallback_model_catalog()` を返す。
 
 ### 4.2 安全な Thinking 有効化と2重フォールバック
 1. `ChatAgent._build_generation_config()` は `self.client.supports_thinking()` を参照し、`True` の場合のみ `"thinking_config": types.ThinkingConfig(include_thoughts=True)` を付与する。
@@ -101,8 +108,9 @@ class ModelInfo:
 1. **ノンブロッキング表示＋バックグラウンド自動更新**:
    * `F2` または `/model` で `ModelSelectModal` を開いた瞬間は、`controller.get_cached_models()`（取得済みキャッシュ、未取得ならフォールバックプリセット）を即座に描画し、UI フリーズをゼロにする。
    * API からの一覧が未取得の場合はモーダルマウント時にバックグラウンドワーカー（`@work(thread=True)`）で `controller.fetch_available_models()` を自動実行し、完了次第 `OptionList` を最新カタログへシームレスに更新する（`R` キーまたは「一覧更新 (R)」ボタンで強制再取得も可能）。
-2. **リッチなモデルスペック表示**:
-   * 各選択肢に **現在選択中マーカー (`*`)**、**モデルID**、**Thinking 対応バッジ (`[Think]`)**、**最大入力トークン上限（例: `Ctx:1M`）**、および**表示名/説明**をコンパクトに表示する。
+2. **ワイド1行スペック表示と余白ゼロの高さ追従**:
+   * `ModelSelectModal` はワイドダイアログ（`max-width: 112`）と `height: 1fr` のリスト領域を採用し、モデル件数と端末サイズ（マウント時・動的取得反映時・リサイズ時）に応じてダイアログ高さを自動算出することで、下部余白を生じさせずに一覧領域を最大化する。
+   * 各選択肢に **現在選択中マーカー (`*`)**、**モデルID**、**Thinking 対応バッジ (`[Think]`)**、**最大入力トークン上限（例: `[1M]`）**、および**説明/表示名**を表示セル幅基準（`Text.truncate`）で折り返しなしの1行に整形して表示する。
 
 ---
 
@@ -111,3 +119,4 @@ class ModelInfo:
 | 日付 | 更新者 | ステータス | 変更内容の要約 |
 | :--- | :--- | :--- | :--- |
 | 2026-11-21 | AI Agent | 実装完了（現行） | 初版作成。`models.list()` / `models.get()` による動的モデルカタログ・スペックキャッシュ基盤（`ModelInfo` / `GenAIClient`）、Thinking 自動有効化・リアルタイム思考ログ表示、および `ModelSelectModal` 動的更新の設計を策定。 |
+| 2026-11-22 | AI Agent | 実装完了（現行） | 抽出条件の厳密化（`gemini-3` 以上＋7除外語部分一致除外）、ソート仕様変更（動的取得優先➔バージョン降順・同一バージョン順序維持）、新デフォルト `"gemini-4-neon"` と `carbon`/`hydrogen` 追加、および `ModelSelectModal` のワイド化・下部余白解消を反映。 |

@@ -1,7 +1,7 @@
 # 📘 Gemio ユーザーズマニュアル
 
 **作成日:** 2026年11月02日  
-**最終更新日:** 2026年11月21日  
+**最終更新日:** 2026年11月22日  
 **ステータス:** 運用中  
 **対象システム:** Gemio パッケージ & TUI (`src/gemio/app/`, `src/gemio/tui/`, `src/gemio/cli/`, `src/gemio/core/`, `src/gemio/project/`)  
 
@@ -258,9 +258,10 @@ Gemioは推測で無理な作業を強行せず、必要に応じて人間に判
 `/model`（または `F2` キー）で開く選択モーダルでは、APIから利用可能なテキスト生成モデル一覧・Thinking対応可否（`[Think]`）・最大入力コンテキスト（`[1M]` 等）を動的に取得して表示します（`R` キーで最新一覧を再取得可能）。
 ```text
 /model          # 選択モーダルから番号またはEnterで選択（APIカタログ自動取得）
-/model argon    # 最上位モデル (gemini-4-argon) へ即時切り替え
+/model neon     # 標準バランス型モデル (gemini-4-neon) へ即時切り替え
+/model carbon   # 現最上位モデル (gemini-4-carbon) へ即時切り替え
+/model hydrogen # 高速・軽量モデル (gemini-4-hydrogen) へ即時切り替え
 /model 3.8      # Flash 3.8 (gemini-3.8-flash) へ即時切り替え
-/model lite     # 軽量モデル (gemini-3.5-flash-lite) へ即時切り替え
 ```
 
 ### 6.4 Web検索と「作業前提資料」の活用 (`/search`, `/s`)
@@ -322,7 +323,7 @@ python -m gemio [project_dir] [オプション]
 | 引数 / オプション | 短縮形 | デフォルト値 | 説明 |
 | :--- | :---: | :--- | :--- |
 | **`project_dir`** | なし | `.` (カレント) | 作業対象とするプロジェクトフォルダのパス。 |
-| **`--model <名前>`** | **`-m`** | `gemini-flash-latest` | 起動時に使用するAIモデル名またはエイリアスを指定します。 |
+| **`--model <名前>`** | **`-m`** | `gemini-4-neon` | 起動時に使用するAIモデル名またはエイリアスを指定します。 |
 | **`--dev`** | なし | 無効 (基本モード) | **開発者モード**を有効化し、Dockerサンドボックス内でのシェルコマンド実行を許可します。 |
 | **`--container <名前>`** | なし | 自動検出 | ホストOSから `--dev` で起動する際、接続先のDockerコンテナ名またはIDを明示指定します。 |
 | **`--edit`** | なし | 無効 (通常承認) | **エディットモード（ファイル作成・編集は自動承認、削除とコマンド実行は都度確認）**で起動します。 |
@@ -379,3 +380,4 @@ python -m gemio [project_dir] [オプション]
 | 2026-11-14 | AI Agent | 運用中 | 目次と本文の完全同期、`ask_user` 確認パネル・連続実行上限の操作説明、`.gemio/`・`*.egg-info/` の保護記載、`--dynamic-tools` オプション、および Skills・カスタムツールの概要（`06_SKILLS_AND_TOOLS_MANUAL.md` への導線）を追加。 |
 | 2026-11-17 | AI Agent | 運用中 | Textual TUI 一本化（`v0.2.0`）に伴い、要求システム要件（対応ターミナル・最小 `80×24`）、4ゾーン画面構成（ユーザー生テキスト表示・ツール折りたたみ・モーダル対話）、新ショートカット（`Ctrl+J`送信、`Esc`ターン中断、`Ctrl+P`コマンドパレット、`Ctrl+Y`コピー）、および `/copy`・`/compact`・`/rewind` コマンドを反映。 |
 | 2026-11-21 | AI Agent | 運用中 | クロスプラットフォーム向けキーバインド刷新（`Ctrl+J`送信統一、`F7`➔`Backspace`全消去、`Ctrl+Z`/`Ctrl+Y` Undo/Redo維持、`F4`入力欄移動、`/cp`・`[Copy]`ボタンによるコピー）および動的モデル一覧・Thinking思考ログ自動表示（`#015`）を反映。 |
+| 2026-11-22 | AI Agent | 運用中 | デフォルトモデルを `gemini-4-neon` へ更新し、Gemini 4 新モデルエイリアス（`neon`, `carbon`, `hydrogen`）および `gemini-3` 以上の動的モデル抽出仕様を反映。 |

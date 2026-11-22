@@ -21,6 +21,11 @@ from gemio.core.models import (
     resolve_model_name,
 )
 
+# ダイアログ内の固定UI要素（上下枠線2 + タイトル2 + OptionList枠線/余白3 + Input3 + ヒント2 + ボタン2）の合計行数
+_DIALOG_FIXED_CHROME_ROWS = 14
+_DIALOG_MAX_WIDTH = 112
+_MIN_OPTION_CELL_WIDTH = 36
+
 
 class ModelSelectModal(ModalScreen[str | None]):
     """利用可能モデル一覧（動的カタログ対応）からの選択またはエイリアス直接指定を行うモーダル画面。"""
@@ -40,9 +45,25 @@ class ModelSelectModal(ModalScreen[str | None]):
         )
         self._fetch_callback = fetch_callback
         self._auto_fetch: bool = auto_fetch
+        self._last_avail_cells: int = 0
 
-    def _build_option(self, idx: int, info: ModelInfo) -> Option:
-        line = Text()
+    def _compute_available_option_cells(self, screen_width: int) -> int:
+        dlg_width = min(max(int(screen_width * 0.96), 48), _DIALOG_MAX_WIDTH)
+        # ダイアログ枠線(2) + 左右padding(4) + OptionList枠線(2) + 項目左右padding(2) + スクロールバー余白(2) = 12
+        return max(_MIN_OPTION_CELL_WIDTH, dlg_width - 12)
+
+    def _compute_dialog_height(self, screen_height: int) -> int:
+        desired_rows = _DIALOG_FIXED_CHROME_ROWS + max(len(self._models), 3)
+        max_rows = max(int(screen_height * 0.94), 16)
+        return min(desired_rows, max_rows)
+
+    def _build_option(
+        self,
+        idx: int,
+        info: ModelInfo,
+        max_cells: int | None = None,
+    ) -> Option:
+        line = Text(no_wrap=True)
         marker = "* " if info.model_id == self.current_model else "  "
         line.append(marker, style="bold green")
         if idx <= 9:
@@ -60,14 +81,16 @@ class ModelSelectModal(ModalScreen[str | None]):
         desc = info.description or info.display_name
         if desc:
             first_line = desc.splitlines()[0].strip()
-            if len(first_line) > 46:
-                first_line = first_line[:45] + "…"
-            line.append(f" - {first_line}", style="dim")
+            if first_line:
+                line.append(f" - {first_line}", style="dim")
+
+        if max_cells is not None and max_cells > 0:
+            line.truncate(max_cells, overflow="ellipsis")
 
         return Option(line, id=f"model-idx-{idx - 1}")
 
     def compose(self) -> ComposeResult:
-        with Vertical(classes="modal-dialog"):
+        with Vertical(classes="modal-dialog-large", id="model-select-dialog"):
             yield Static(
                 f"AIモデル選択 (現在: {self.current_model})",
                 markup=False,
@@ -82,16 +105,16 @@ class ModelSelectModal(ModalScreen[str | None]):
             yield OptionList(
                 *options,
                 id="model-option-list",
-                classes="modal-option-list",
+                classes="model-select-option-list",
             )
             yield Input(
-                placeholder="またはモデル名・エイリアス (flash, argon, lite 等) を直接入力して Enter...",
+                placeholder="またはモデル名・エイリアス (neon, carbon, argon, hydrogen, lite 等) を直接入力して Enter...",
                 id="model-custom-input",
             )
             hint = (
-                "数字(1-9)またはEnterで選択 / RでAPI一覧更新 / Tabで直接入力 / Escでキャンセル"
+                "数字(1-9)/Enter:選択 / R:一覧更新 / Tab:直接入力 / Esc:キャンセル"
                 if self._fetch_callback is not None
-                else "数字キー(1-9)またはEnterで選択 / Tabで直接入力欄へ移動 / Escでキャンセル"
+                else "数字(1-9)/Enter:選択 / Tab:直接入力欄へ移動 / Esc:キャンセル"
             )
             yield Static(
                 hint,
@@ -120,18 +143,51 @@ class ModelSelectModal(ModalScreen[str | None]):
                     compact=True,
                 )
 
+    def _sync_layout_and_options(self, *, rebuild_options: bool = False) -> None:
+        if not self.is_mounted or self.app is None:
+            return
+        screen_w, screen_h = self.app.size
+        dlg = self.query_one("#model-select-dialog", Vertical)
+        dlg.styles.height = self._compute_dialog_height(screen_h)
+
+        avail_cells = self._compute_available_option_cells(screen_w)
+        if rebuild_options or avail_cells != self._last_avail_cells:
+            self._last_avail_cells = avail_cells
+            opt_list = self.query_one("#model-option-list", OptionList)
+            prev_highlight = opt_list.highlighted
+            opt_list.clear_options()
+            opt_list.add_options(
+                [
+                    self._build_option(idx, info, max_cells=avail_cells)
+                    for idx, info in enumerate(self._models, 1)
+                ]
+            )
+            if (
+                prev_highlight is not None
+                and 0 <= prev_highlight < len(self._models)
+                and not rebuild_options
+            ):
+                opt_list.highlighted = prev_highlight
+            else:
+                self._highlight_current_model()
+
     def on_mount(self) -> None:
-        self._highlight_current_model()
+        self._sync_layout_and_options(rebuild_options=True)
         self.query_one("#model-option-list", OptionList).focus()
         if self._auto_fetch and self._fetch_callback is not None:
             self._refresh_models_in_thread(force_refresh=False)
+
+    def on_resize(self, event: events.Resize) -> None:
+        self._sync_layout_and_options(rebuild_options=False)
 
     def _highlight_current_model(self) -> None:
         opt_list = self.query_one("#model-option-list", OptionList)
         for idx, info in enumerate(self._models):
             if info.model_id == self.current_model:
                 opt_list.highlighted = idx
-                break
+                return
+        if self._models:
+            opt_list.highlighted = 0
 
     @work(thread=True, exclusive=True, group="model_catalog_fetch")
     def _refresh_models_in_thread(self, force_refresh: bool = True) -> None:
@@ -151,12 +207,7 @@ class ModelSelectModal(ModalScreen[str | None]):
         if not self.is_mounted or not models:
             return
         self._models = list(models)
-        opt_list = self.query_one("#model-option-list", OptionList)
-        opt_list.clear_options()
-        opt_list.add_options(
-            [self._build_option(idx, info) for idx, info in enumerate(self._models, 1)]
-        )
-        self._highlight_current_model()
+        self._sync_layout_and_options(rebuild_options=True)
         title_w = self.query_one("#model-modal-title", Static)
         title_w.update(
             f"AIモデル選択 (現在: {self.current_model} / 利用可能: {len(self._models)}件)"

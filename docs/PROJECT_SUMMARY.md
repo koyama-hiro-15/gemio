@@ -431,3 +431,10 @@
     - `core/models.py`（SDK非依存維持）に `ModelInfo`、テキスト生成モデル抽出フィルタ（`is_text_generation_model`）、Thinking 対応判定（`is_thinking_supported`）、および `AgentLogCategory.THOUGHT` を実装。
     - `GenAIClient` に `models.list()` / `models.get()`（`v1beta` 優先＋フォールバック）を用いたセッション内モデルキャッシュ基盤と、Thinking 対応モデルでの自動 `ThinkingConfig(include_thoughts=True)` 付与（万一の400エラー時自動解除フォールバック付き）を実装。
     - `ChatAgent` から思考テキストを逐次通知して `ActivityGroup` へリアルタイム表示するよう統合し、`ModelSelectModal`（`F2` / `/model`）およびコマンドパレットで API モデル一覧・`[Think]` バッジ・最大コンテキスト長を動的表示できるよう刷新（全86テスト合格）。
+- **2026年11月22日**: モデル選択ダイアログのレイアウト改善、および動的モデル抽出・ソート仕様・デフォルトモデルの刷新（設計書 `#015` 更新）
+  - **テキスト生成モデルの絞り込み・ソート条件とプリセットの刷新 (`src/gemio/core/models.py`)**:
+    - `is_text_generation_model()` の対象を `generateContent` 対応・`'gemini-'` 直後が数字かつメジャーバージョン `3` 以上（`gemini-2` 以下を除外）・除外キーワード（`tts`, `image`, `live`, `transcribe`, `translate`, `omni`, `nano-banana`）不含へと厳密化。
+    - `ModelInfo.is_dynamic` と `extract_model_version()` を追加し、`sort_model_catalog()` を「動的取得モデル優先 ➔ バージョン番号降順（同一バージョン内の並び順は維持）」へ刷新。
+    - デフォルトモデル（`DEFAULT_AI_MODEL_NAME`）を `"gemini-4-neon"` へ変更し、Gemini 4 新モデル（`gemini-4-neon`, `gemini-4-carbon`, `gemini-4-hydrogen`）を `MODEL_PRESETS` / `MODEL_ALIASES` に追加（既存の `gemini-flash-latest` 等も削除せず保持し直接指定互換を維持）。
+  - **`ModelSelectModal` のワイド化と下部余白の解消 (`src/gemio/tui/screens/model.py`, `src/gemio/tui/styles/app.tcss`)**:
+    - ダイアログ幅を `max-width: 112` へ拡大し、リスト領域を `height: 1fr` 化してモデル件数・端末サイズに応じた高さ算出を行うことでダイアログ下部の空白を解消。あわせて各行をセル幅基準の `Text.truncate` で1行省略描画に統一。

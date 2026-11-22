@@ -5,29 +5,49 @@ AIモデル定義・スペック構造（ModelInfo）・エイリアス解決・
 
 from dataclasses import dataclass
 import datetime
+import re
 from typing import Any
 
-DEFAULT_AI_MODEL_NAME = "gemini-flash-latest"
+DEFAULT_AI_MODEL_NAME = "gemini-4-neon"
+
+MIN_SUPPORTED_GEMINI_MAJOR = 3
+
+EXCLUDED_MODEL_KEYWORDS: tuple[str, ...] = (
+    "tts",
+    "image",
+    "live",
+    "transcribe",
+    "translate",
+    "omni",
+    "nano-banana",
+)
+
+_GEMINI_VERSION_PATTERN = re.compile(r"^gemini-(\d+(?:\.\d+)*)")
 
 MODEL_PRESETS = [
-    ("gemini-flash-latest", "最新Flashモデル（高速・標準、常に最新に追従）"),
-    ("gemini-4-argon", "最新最上位モデル（高度な推論・複雑なタスク）"),
+    ("gemini-4-neon", "最新バランス型モデル（標準・高速）"),
+    ("gemini-4-carbon", "現最上位モデル（高度な推論・複雑なタスク）"),
+    ("gemini-4-argon", "上位推論モデル（高度な推論・複雑なタスク）"),
+    ("gemini-4-hydrogen", "高速・軽量モデル（旧Flash相当）"),
     ("gemini-3.8-flash", "Flash 3.8（バージョン固定）"),
     ("gemini-3.6-flash", "Flash 3.6（前世代固定）"),
     ("gemini-3.5-flash-lite", "Flash 3.5 Lite（軽量・低レイテンシ）"),
     ("gemini-3.1-flash-lite", "Flash 3.1 Lite（旧世代軽量）"),
+    ("gemini-flash-latest", "最新Flashモデル（高速・標準、常に最新に追従）"),
 ]
 
 MODEL_ALIASES = {
-    # gemini-flash-latest (デフォルト)
-    "flash": "gemini-flash-latest",
-    "latest": "gemini-flash-latest",
-    "flash-latest": "gemini-flash-latest",
-    "default": "gemini-flash-latest",
+    # gemini-4-neon (デフォルト・バランス型)
+    "default": "gemini-4-neon",
+    "neon": "gemini-4-neon",
+    "gemini-4": "gemini-4-neon",
+    "4": "gemini-4-neon",
+    # gemini-4-carbon (現最上位)
+    "carbon": "gemini-4-carbon",
     # gemini-4-argon
     "argon": "gemini-4-argon",
-    "gemini-4": "gemini-4-argon",
-    "4": "gemini-4-argon",
+    # gemini-4-hydrogen (旧Flash相当)
+    "hydrogen": "gemini-4-hydrogen",
     # gemini-3.8-flash (バージョン固定)
     "flash-3.8": "gemini-3.8-flash",
     "3.8": "gemini-3.8-flash",
@@ -42,6 +62,10 @@ MODEL_ALIASES = {
     # gemini-3.1-flash-lite
     "3.1-lite": "gemini-3.1-flash-lite",
     "3.1": "gemini-3.1-flash-lite",
+    # gemini-flash-latest (Gemini 3系以前互換・直接指定維持)
+    "flash": "gemini-flash-latest",
+    "latest": "gemini-flash-latest",
+    "flash-latest": "gemini-flash-latest",
 }
 
 CONTEXT_TOKEN_WARNING_THRESHOLD = 50_000
@@ -76,6 +100,7 @@ class ModelInfo:
     input_token_limit: int | None = None
     output_token_limit: int | None = None
     supported_actions: tuple[str, ...] = ()
+    is_dynamic: bool = False
 
     def format_context_limit(self) -> str:
         """最大入力トークン上限をコンパクトな表記（例: '1M', '128k'）へ整形します。"""
@@ -146,13 +171,31 @@ def resolve_model_name(input_name: str) -> str:
     return cleaned
 
 
+def extract_model_version(model_id: str) -> tuple[int, ...]:
+    """
+    モデルIDから 'gemini-' 直後のバージョン番号タプル（例: 'gemini-4-neon' -> (4,), 'gemini-3.8-flash' -> (3, 8)）を抽出します。
+    'gemini-' の直後に数字がない場合は空タプル () を返します。
+    """
+    lowered = normalize_model_id(model_id).lower()
+    match = _GEMINI_VERSION_PATTERN.match(lowered)
+    if not match:
+        return ()
+    return tuple(int(part) for part in match.group(1).split("."))
+
+
 def is_text_generation_model(
     sdk_model: Any,
     *,
     exclude_specialized_media: bool = True,
 ) -> bool:
     """
-    SDKの Model オブジェクトがテキスト生成（generateContent）に対応しているかを判定します。
+    SDKの Model オブジェクトが対象世代（gemini-3以上）のテキスト生成モデルかを判定します。
+
+    絞り込み条件:
+    1. supported_actions に "generateContent" が含まれる
+    2. "gemini-" の直後に数字が来る名前で、メジャーバージョンが 3 以上である
+    3. exclude_specialized_media=True の場合、モデル名に除外キーワード
+       ("tts", "image", "live", "transcribe", "translate", "omni", "nano-banana") を含まない
     """
     raw_name = _safe_str(getattr(sdk_model, "name", None))
     if not raw_name:
@@ -165,9 +208,13 @@ def is_text_generation_model(
     if "generateContent" not in actions:
         return False
 
+    lowered_id = normalize_model_id(raw_name).lower()
+    version = extract_model_version(lowered_id)
+    if not version or version[0] < MIN_SUPPORTED_GEMINI_MAJOR:
+        return False
+
     if exclude_specialized_media:
-        lowered_id = normalize_model_id(raw_name).lower()
-        if lowered_id.endswith("-tts") or "-image" in lowered_id:
+        if any(kw in lowered_id for kw in EXCLUDED_MODEL_KEYWORDS):
             return False
 
     return True
@@ -200,6 +247,7 @@ def model_info_from_sdk(sdk_model: Any, fallback_id: str = "") -> ModelInfo:
         input_token_limit=_safe_optional_int(getattr(sdk_model, "input_token_limit", None)),
         output_token_limit=_safe_optional_int(getattr(sdk_model, "output_token_limit", None)),
         supported_actions=actions,
+        is_dynamic=True,
     )
 
 
@@ -207,34 +255,41 @@ def get_fallback_model_catalog() -> list[ModelInfo]:
     """
     API未接続時・オフライン時・モックテスト環境向けの標準フォールバックモデル一覧を返します。
     """
-    return [
+    catalog = [
         ModelInfo(
             model_id=m_id,
             display_name="",
             description=m_desc,
             supports_thinking=False,
             supported_actions=("generateContent",),
+            is_dynamic=False,
         )
         for m_id, m_desc in MODEL_PRESETS
     ]
+    return sort_model_catalog(catalog)
 
 
 def sort_model_catalog(models: list[ModelInfo]) -> list[ModelInfo]:
     """
-    モデル一覧を「デフォルトモデル ➔ プリセット代表モデル ➔ Thinking対応モデル ➔ 名前順」に整列します。
+    モデル一覧を以下の優先順で整列します（同一バージョン内の並び順は元の順序を維持）。
+    1. 動的取得したモデル（is_dynamic=True）を優先
+    2. モデルのバージョン番号が大きいほう（新モデル）を優先
     """
-    preset_rank = {m_id: idx for idx, (m_id, _) in enumerate(MODEL_PRESETS)}
+    if not models:
+        return []
 
-    def _sort_key(info: ModelInfo) -> tuple[int, int, int, str]:
-        if info.model_id == DEFAULT_AI_MODEL_NAME:
-            return (0, 0, 0, info.model_id)
-        if info.model_id in preset_rank:
-            return (1, preset_rank[info.model_id], 0, info.model_id)
-        is_gemini = 0 if info.model_id.startswith("gemini-") else 1
-        think_rank = 0 if info.supports_thinking else 1
-        return (2, is_gemini, think_rank, info.model_id)
+    parsed_versions = [extract_model_version(m.model_id) for m in models]
+    pad_len = max(max((len(v) for v in parsed_versions), default=0), 3)
 
-    return sorted(models, key=_sort_key)
+    def _sort_key(item: tuple[int, ModelInfo]) -> tuple[int, tuple[int, ...]]:
+        idx, info = item
+        ver = parsed_versions[idx]
+        padded = ver + (0,) * (pad_len - len(ver))
+        neg_version = tuple(-v for v in padded)
+        dynamic_rank = 0 if info.is_dynamic else 1
+        return (dynamic_rank, neg_version)
+
+    return [info for _, info in sorted(enumerate(models), key=_sort_key)]
 
 
 def get_now_time_text() -> str:
@@ -249,9 +304,12 @@ __all__ = [
     "CONTEXT_TOKEN_DANGER_THRESHOLD",
     "CONTEXT_TOKEN_WARNING_THRESHOLD",
     "DEFAULT_AI_MODEL_NAME",
+    "EXCLUDED_MODEL_KEYWORDS",
+    "MIN_SUPPORTED_GEMINI_MAJOR",
     "MODEL_ALIASES",
     "MODEL_PRESETS",
     "ModelInfo",
+    "extract_model_version",
     "get_fallback_model_catalog",
     "get_now_time_text",
     "is_text_generation_model",
