@@ -477,7 +477,7 @@ PromptSubmitted ➔ GemioApp._start_chat_worker()
 ### 7.1 `gemio` トップレベル公開シンボル一覧
 `src/gemio/__init__.py` は、`tui` や `cli` をインポートせず、外部のPythonアプリケーションや自動化スクリプトから軽量にインポートできるよう設計されています。
 
-* **パッケージメタ情報**: `__version__` (`"0.2.0"`)
+* **パッケージメタ情報**: `__version__` (`"0.3.0"`)
 * **アプリケーション制御 (`app`)**: `AppConfig`, `AppStartupError`, `GemioController`, `InteractionHandler`, `SessionSnapshot`, `SearchOutcome`, `parse_slash_command`, `validate_project_dir`, `APP_DEFAULT_MAX_ITERATIONS`, `APP_WEB_SEARCH_ENABLED_INSTRUCTION`, `APP_WEB_SEARCH_DISABLED_INSTRUCTION`, `APP_SEARCH_GUIDANCE_INSTRUCTION`, `build_web_search_instruction`
 * **エージェント & クライアント**: `GenAIClient`, `TokenUsageTracker`, `ChatAgent`, `ChatTurnResult`, `SearchAgent`, `SearchResult`, `WEB_SEARCH_TOOLSET_NAME`, `MAX_TOOL_SEARCH_QUERY_CHARS`, `validate_search_query_safety`, `format_search_result_for_tool`
 * **コンテキスト & セッション**: `ChatSession`, `ChatHistory`, `ChatTurn`, `MaterialStore`, `ReferenceMaterial`, `MaterialKind`, `ContextCompactor`, `CompactionResult`, `compute_sha256`
@@ -558,4 +558,4 @@ finally:
 | 2026-11-17 | AI Agent | 運用中 | Textual TUI 一本化・4層パッケージ再編（`#014` / `v0.2.0`）に伴い、4層単方向依存（`cli` ➔ `tui` ➔ `app` ➔ `project` ➔ `core`）、`GemioController`、`GemioApp` / `ThreadModalBridge` / 9種モーダル、安全なターン中断、および公開APIを更新。 |
 | 2026-11-21 | AI Agent | 運用中 | 動的モデルカタログ・スペックキャッシュと Thinking 自動統合（`#015`：`ModelInfo`、`GenAIClient.list_available_models` / `supports_thinking`、`AgentLogCategory.THOUGHT`、`ModelSelectModal` 動的更新）およびクロスプラットフォーム向けキーバインド刷新（`Ctrl+J`送信・`F4`入力欄移動・`Ctrl+Y` Redo維持）を反映。 |
 | 2026-11-22 | AI Agent | 運用中 | 動的モデル抽出条件の厳密化（`gemini-3` 以上＋7除外語部分一致除外）、ソート仕様変更（動的優先➔新バージョン順・同一バージョン順序維持）、デフォルトモデル `gemini-4-neon` および `carbon`/`hydrogen` 追加、ならびに `ModelSelectModal` のワイド化・余白解消を反映。 |
-| 2026-11-23 | AI Agent | 運用中 | 作業エージェント連携型Web検索と検索スイッチ（`#016`：`SearchAgent` ステートレス化、`web_search` ツールのプリフライト検査＋全モード全文常時確認、`Toolset.enabled`、`+WEB`/`-WEB` ヘッダーバッジ、および `/search` 単発検索＋任意資料追加）を反映。 |
+| 2026-11-23 | AI Agent | 運用中 | 作業エージェント連携型Web検索と検索スイッチ（`#016` / `v0.3.0`：`SearchAgent` ステートレス化、`web_search` ツールのプリフライト検査＋全モード全文常時確認、`Toolset.enabled`、`+WEB`/`-WEB` ヘッダーバッジ、および `/search` 単発検索＋任意資料追加）を反映。 |

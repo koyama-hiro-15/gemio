@@ -438,7 +438,7 @@
     - デフォルトモデル（`DEFAULT_AI_MODEL_NAME`）を `"gemini-4-neon"` へ変更し、Gemini 4 新モデル（`gemini-4-neon`, `gemini-4-carbon`, `gemini-4-hydrogen`）を `MODEL_PRESETS` / `MODEL_ALIASES` に追加（既存の `gemini-flash-latest` 等も削除せず保持し直接指定互換を維持）。
   - **`ModelSelectModal` のワイド化と下部余白の解消 (`src/gemio/tui/screens/model.py`, `src/gemio/tui/styles/app.tcss`)**:
     - ダイアログ幅を `max-width: 112` へ拡大し、リスト領域を `height: 1fr` 化してモデル件数・端末サイズに応じた高さ算出を行うことでダイアログ下部の空白を解消。あわせて各行をセル幅基準の `Text.truncate` で1行省略描画に統一。
-- **2026年11月23日**: 作業エージェント連携型Web検索（Agent-as-a-Tool）、`+WEB`/`-WEB` 検索スイッチ、および単発 `/search` ＋任意資料追加の実装（`v0.2.0` / 設計書 `#016`）
+- **2026年11月23日**: 作業エージェント連携型Web検索（Agent-as-a-Tool）、`+WEB`/`-WEB` 検索スイッチ、単発 `/search` ＋任意資料追加の実装、およびマイナーバージョン更新（**`v0.3.0`** / 設計書 `#016`）
   - **`SearchAgent` の完全ステートレス化と3層ガードレールの実装 (`src/gemio/core/search.py`, `prompts.py`, `tools/`)**:
     - 旧 `search_history`（連続検索履歴）を撤廃し、ローカル履歴・`MaterialStore`・過去検索文脈を一切引き継がない完全1問1答（ステートレス）な `SearchAgent` へ刷新。
     - プリフライト安全性検査 `validate_search_query_safety()`（ローカル物理パス・秘密鍵やAPIキー等の機密パターン・600文字上限による原稿/コード丸ごと貼り付け阻止）および暗号化リダイレクトURLを除いて整形する `format_search_result_for_tool()` を実装。
@@ -449,4 +449,5 @@
     - 既存の `/search <query>` は `MaterialStore` へ自動蓄積しない単発検索へ変更し、`save_search_result_to_materials()`（`/search --save`）による任意での資料追加に対応。
   - **TUI `+WEB` / `-WEB` バッジ・`[+ 資料に追加]` ボタン・テスト・ドキュメント同期 (`src/gemio/tui/`, `tests/`, `docs/`, `manuals/`)**:
     - `StatusHeader` の承認バッジ右隣にクリックで切り替え可能な `+WEB`（強調色） / `-WEB`（太字解除・減光グレー `.badge-web-off`）バッジを配置し、`SearchTurnWidget` に `[+ 資料に追加]` ボタンとフォーカス自動復帰を実装。
+    - バージョンを **`v0.3.0`** に更新（`pyproject.toml`, `src/gemio/__init__.py`, `CHANGELOG.md`, `README.md`, `manuals/07_ARCHITECTURE_REFERENCE.md`）。
     - 全12テストモジュール・88件の単体・統合・ヘッドレスTUIテスト合格を確認し、`#016`・`#001`・`#002`・`docs/README.md`・`manuals/01,02,03,05,07,08,09`・`README.md` を同期更新。
