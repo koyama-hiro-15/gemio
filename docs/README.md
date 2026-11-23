@@ -1,7 +1,7 @@
 # 🗂️ Gemio 設計書・技術ドキュメント一覧（インデックス）
 
 **作成日:** 2026年11月17日  
-**最終更新日:** 2026年11月23日  
+**最終更新日:** 2026年11月24日  
 **ステータス:** 運用中  
 **対象範囲:** `docs/` 配下の設計書（`design/`）、技術調査資料（`tech_docs/`）、運用ルール、および開発履歴サマリー  
 
@@ -53,6 +53,7 @@
 | **#014** | **[014_textual_tui_architecture.md](./design/014_textual_tui_architecture.md)**<br>Textual TUI一本化・4層パッケージ再編・画面/操作設計 | 2026-11-17 | App / TUI / CLI | ✅ **実装完了（現行）** | `prompt_toolkit` 廃止とTextual完全一本化、`app`/`tui`/`cli` 再編、最小 `80×24` 対応シングルカラムUI、ユーザー生テキスト表示＋AI Markdown描画、モーダル・ターン中断設計。 |
 | **#015** | **[015_dynamic_model_catalog_and_thinking.md](./design/015_dynamic_model_catalog_and_thinking.md)**<br>動的モデルカタログ・スペック取得と Thinking 統合 | 2026-11-21 | Core / App / TUI | ✅ **実装完了（現行）** | `models.list` / `models.get` による動的モデル一覧・スペックキャッシュ基盤（`ModelInfo`）、Thinking 対応モデルの自動判定とリアルタイム思考ログ表示、`ModelSelectModal` の動的化。 |
 | **#016** | **[016_agent_delegated_web_search.md](./design/016_agent_delegated_web_search.md)**<br>作業エージェント連携型Web検索と検索スイッチ | 2026-11-23 | Core / App / TUI | ✅ **実装完了（現行）** | `ChatAgent` からステートレス `SearchAgent` を呼ぶ `web_search` ツール統合、全モード共通の全文常時確認、`+WEB`/`-WEB` バッジ（デフォルトON）、`/search` 単発検索＋任意資料追加。 |
+| **#017** | **[017_human_assisted_web_search.md](./design/017_human_assisted_web_search.md)**<br>人間介在型 Web 検索支援と作業前提資料管理 | 2026-11-24 | Core / App / TUI | 📝 **設計完了（実装準備中）** | Google Search Grounding を廃止し、`UserSearchModal`（`[Copy]`/`[Open]`・複数行貼付・入力テキスト診断）・`+WEB`/`-WEB`（`/web`）・`/materials`・通常応答/前提資料選択を備えた人間介在型検索支援設計。 |
 
 ---
 
@@ -62,6 +63,7 @@
 
 | ファイル | ステータス | 内容の要約 |
 | :--- | :---: | :--- |
+| **[web_search_design_minutes.md](./tech_docs/web_search_design_minutes.md)**<br>📝 Gemio Web検索機能 設計検討議事録 | 記録確定 | Google Search Grounding 規約適合性評価、外部検索API・ブラウザ自動操作・スクレイピングの検討結果、および人間介在型 Web 検索支援（`#017`）採用の決定経緯。 |
 | **[google_genai_models_reference.md](./tech_docs/google_genai_models_reference.md)**<br>🤖 Google GenAI SDK モデル情報取得・機能判定リファレンス | 技術資料 | `google-genai` SDK の `models.list()` / `models.get()` の仕様・取得フィールド整理、テキスト生成モデル抽出および Thinking 対応判定のサンプルコード集。 |
 | **[sandbox_security_responsibility_matrix.md](./tech_docs/sandbox_security_responsibility_matrix.md)**<br>🛡️ サンドボックスのセキュリティ境界と責任分界点 | 技術資料（運用中） | Gemio本体（Python側ガードレール）で保証される安全性と、Dockerコンテナ設定（OS・ランタイム層）で確保すべき安全性の責任分界点マトリクス。 |
 | **[agent_sandbox_and_container_architecture.md](./tech_docs/agent_sandbox_and_container_architecture.md)**<br>🏗️ AIエージェントの設計思想とサンドボックス構造 | 技術資料 | AIコーディングエージェントの基本設計思想、OSネイティブ隔離とDocker隔離の比較、I/O最適化、脅威モデルと堅牢化ベストプラクティス。 |
@@ -85,3 +87,4 @@
 | 2026-11-17 | AI Agent | 運用中 | `#014`（`014_textual_tui_architecture.md`）の設計作成および実装完了に伴い、`#014` を `実装完了（現行）`、`#012` を `置換済み（Superseded by #014）` に更新。 |
 | 2026-11-21 | AI Agent | 運用中 | `docs/tech_docs/google_genai_models_reference.md` の追加および `#015`（`015_dynamic_model_catalog_and_thinking.md`）の作成・実装完了に伴い一覧表を更新。 |
 | 2026-11-23 | AI Agent | 運用中 | `#016`（`016_agent_delegated_web_search.md`）の作成および実装完了に伴い、`#016` を `実装完了（現行）` に更新し、`#001`・`#002` の参照情報を同期。 |
+| 2026-11-24 | AI Agent | 運用中 | `#017`（`017_human_assisted_web_search.md`）および議事録（`docs/tech_docs/web_search_design_minutes.md`）の作成に伴い一覧表を更新。 |
