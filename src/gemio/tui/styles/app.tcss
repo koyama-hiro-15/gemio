@@ -77,9 +77,8 @@ StatusHeader Horizontal {
     padding: 0 0 0 1;
 }
 
-.header-badge.badge-web-on {
+.badge-web-on {
     color: $accent;
-    text-style: bold;
 }
 
 .header-badge.badge-web-off {

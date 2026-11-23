@@ -207,6 +207,12 @@ async def test_slash_commands_web_badge_toggle_and_search_card_selective_save(tm
                 web_badge = app.status_header.query_one("#hdr-web", Static)
                 assert app.status_header.snapshot.web_badge_text == "+WEB"
                 assert web_badge.has_class("badge-web-on")
+                assert web_badge.styles.text_style.reverse is not True
+
+                # +WEB 状態でマウスホバー時に反転ハイライトすること
+                await pilot.hover("#hdr-web")
+                await pilot.pause()
+                assert web_badge.styles.text_style.reverse is True
 
                 # 1. #hdr-web バッジのクリックで -WEB (.badge-web-off) に切り替わること
                 await pilot.click("#hdr-web")
@@ -214,6 +220,14 @@ async def test_slash_commands_web_badge_toggle_and_search_card_selective_save(tm
                 assert app.status_header.snapshot.web_badge_text == "-WEB"
                 assert web_badge.has_class("badge-web-off")
                 assert not web_badge.has_class("badge-web-on")
+
+                # -WEB 状態でもマウスホバー時に反転ハイライトすること
+                await pilot.hover("#hdr-project")
+                await pilot.pause()
+                assert web_badge.styles.text_style.reverse is not True
+                await pilot.hover("#hdr-web")
+                await pilot.pause()
+                assert web_badge.styles.text_style.reverse is True
 
                 # /search on で +WEB に戻ること
                 app.composer.editor.insert("/search on")
