@@ -67,6 +67,10 @@ async def test_tui_layout_80x24_and_composer_keybindings(tmp_path):
 
             editor = app.composer.editor
             assert app.focused is editor
+            # 未入力時のプレースホルダーはIME未確定文字と連続しないよう半角スペース1つで始まること
+            assert editor.placeholder == " プロンプトまたはコマンド (/help 等) を入力..."
+            rendered_first_line = "".join(seg.text for seg in editor.render_line(0))
+            assert rendered_first_line.startswith(" プロンプト")
 
             editor.insert("1行目のテキスト\n2行目のテキスト")
             await pilot.pause()

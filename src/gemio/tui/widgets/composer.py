@@ -123,7 +123,7 @@ class PromptTextArea(TextArea):
             tab_behavior="focus",
             show_line_numbers=False,
             highlight_cursor_line=False,
-            placeholder="プロンプトまたはコマンド (/help 等) を入力...",
+            placeholder=" プロンプトまたはコマンド (/help 等) を入力...",
             id=id,
         )
 
