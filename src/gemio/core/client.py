@@ -116,6 +116,19 @@ class TokenUsageTracker:
     def last_prompt_tokens(self) -> int:
         return self._usage["last_prompt_tokens"]
 
+    def set_context_tokens(self, prompt_tokens: int) -> None:
+        """
+        コンテキスト圧縮（/compact）後などの再計測により、
+        直近コンテキスト量（last_prompt_tokens）のみを更新します。
+        累積トークン消費量や API 呼び出し回数は変更しません。
+        """
+        if (
+            isinstance(prompt_tokens, int)
+            and not isinstance(prompt_tokens, bool)
+            and prompt_tokens >= 0
+        ):
+            self._usage["last_prompt_tokens"] = prompt_tokens
+
     @property
     def cumulative_total_tokens(self) -> int:
         return self._usage["cumulative_total_tokens"]
@@ -401,6 +414,48 @@ class GenAIClient:
                     delay *= backoff_factor
                 else:
                     raise
+
+    def count_tokens(
+        self,
+        contents: list,
+        *,
+        model: str | None = None,
+        system_instruction: str | None = None,
+    ) -> int | None:
+        """
+        指定された contents（および任意で system_instruction）のトークン数を
+        models.count_tokens API で計測して返します。
+        API エラー時や非整数応答（モック環境等）の場合は例外を送出せず None を返します。
+        """
+        target_model = resolve_model_name(model) if model else self.model_name
+        target_contents = list(contents)
+        if system_instruction and system_instruction.strip():
+            target_contents.insert(
+                0,
+                types.Content(
+                    role="user",
+                    parts=[types.Part.from_text(text=system_instruction)],
+                ),
+            )
+        if not target_contents:
+            return 0
+
+        try:
+            response = self._sdk_client.models.count_tokens(
+                model=target_model,
+                contents=target_contents,
+            )
+        except Exception:
+            return None
+
+        total_tokens = getattr(response, "total_tokens", None)
+        if (
+            isinstance(total_tokens, int)
+            and not isinstance(total_tokens, bool)
+            and total_tokens >= 0
+        ):
+            return total_tokens
+        return None
 
     def close(self) -> None:
         """内部の Google GenAI SDK クライアントをクローズします。"""

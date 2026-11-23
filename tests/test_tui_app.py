@@ -617,3 +617,93 @@ async def test_agent_web_search_tool_in_tui_confirms_even_in_trust_mode_and_logs
                 )
                 assert "web_search" in turns[0].activity_group.tool_names
                 assert len(ctrl.chat_session.materials) == 0
+
+
+async def test_compact_command_immediately_updates_header_and_token_modal(tmp_path):
+    """
+    /compact 実行直後（次のプロンプト実行前）に、
+    1. StatusHeader の #hdr-tokens（Ctx表示と健全性カラークラス）が即座に更新されること
+    2. /tokens で開いた TokenUsageModal のコンテキスト量・会話履歴要素数・要約圧縮回数が即座に更新されていること
+    """
+    from types import SimpleNamespace
+    from gemio.core.context import ChatTurn
+    from gemio.tui.screens import TokenUsageModal
+
+    def _turn(tid: str, prompt: str, resp: str) -> ChatTurn:
+        return ChatTurn(
+            turn_id=tid,
+            user_prompt=prompt,
+            contents=[
+                types.Content(role="user", parts=[types.Part.from_text(text=prompt)]),
+                types.Content(role="model", parts=[types.Part.from_text(text=resp)]),
+            ],
+            assistant_response=resp,
+        )
+
+    cfg = AppConfig(project_path=tmp_path)
+    with patch("gemio.core.client.genai.Client") as mock_sdk_cls:
+        mock_sdk = MagicMock()
+        mock_sdk_cls.return_value = mock_sdk
+        ctrl = GemioController(cfg)
+
+        # 圧縮前は 160,000 tokens（danger状態）・3ターン保持の状態を準備
+        ctrl.token_tracker.record(
+            SimpleNamespace(
+                usage_metadata=SimpleNamespace(
+                    prompt_token_count=160_000,
+                    candidates_token_count=500,
+                    thoughts_token_count=0,
+                    cached_content_token_count=0,
+                    tool_use_prompt_token_count=0,
+                    total_token_count=160_500,
+                )
+            ),
+            source="chat",
+        )
+        ctrl.chat_session.history.append_turn(_turn("t1", "設計1", "回答1"))
+        ctrl.chat_session.history.append_turn(_turn("t2", "設計2", "回答2"))
+        ctrl.chat_session.history.append_turn(_turn("t3", "設計3", "回答3"))
+
+        mock_sdk.models.generate_content.return_value = SimpleNamespace(
+            text="1. **目的・背景**: 要約された文脈",
+            usage_metadata=SimpleNamespace(
+                prompt_token_count=40_000,
+                candidates_token_count=200,
+                thoughts_token_count=0,
+                cached_content_token_count=0,
+                tool_use_prompt_token_count=0,
+                total_token_count=40_200,
+            ),
+        )
+        mock_sdk.models.count_tokens.return_value = SimpleNamespace(total_tokens=2_500)
+
+        app = GemioApp(ctrl)
+        async with app.run_test(size=(100, 28)) as pilot:
+            await pilot.pause()
+
+            tok_badge = app.status_header.query_one("#hdr-tokens", Static)
+            assert "Ctx:160.0k" in str(tok_badge.render())
+            assert tok_badge.has_class("badge-ctx-danger")
+
+            # /compact 1 を実行
+            app.composer.editor.insert("/compact 1")
+            await pilot.press("ctrl+j")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            # 次のプロンプトを待たずにヘッダが即座に更新されていること
+            assert "Ctx:2.5k" in str(tok_badge.render())
+            assert tok_badge.has_class("badge-ctx-normal")
+            assert not tok_badge.has_class("badge-ctx-danger")
+
+            # /tokens ダイアログを開くと即座に最新値（2,500 tokens・4件）が表示されていること
+            app.composer.editor.insert("/tokens")
+            await pilot.press("ctrl+j")
+            await pilot.pause()
+            assert isinstance(app.screen, TokenUsageModal)
+            summary_text = _render_widget_plain(
+                app.screen.query_one("#token-summary-box", Static)
+            )
+            assert "2,500 tokens" in summary_text
+            assert "快適・余裕あり" in summary_text
+            assert "会話履歴要素数: 4 件" in summary_text

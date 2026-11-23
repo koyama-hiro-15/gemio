@@ -631,19 +631,39 @@ class GemioController:
         self.project.reset_rejection_state()
         return self.chat_session.rewind(steps=steps)
 
+    def _refresh_context_tokens_after_compaction(self) -> None:
+        """
+        コンテキスト圧縮後の履歴・前提資料・システム指示のトークン数を再計測し、
+        成功した場合のみ token_tracker の直近コンテキスト量（last_prompt_tokens）を更新します。
+        失敗時は既存の値を維持します。
+        """
+        if self.ai_client is None:
+            return
+        request_contents = self.chat_session.build_request_contents()
+        system_instruction = self.prompt_composer.compose()
+        measured_tokens = self.ai_client.count_tokens(
+            request_contents,
+            system_instruction=system_instruction,
+        )
+        if measured_tokens is not None:
+            self.token_tracker.set_context_tokens(measured_tokens)
+
     def compact_context(
         self,
         keep_recent_turns: int = 2,
         on_retry_warning: Callable[[str], None] | None = None,
     ) -> CompactionResult:
-        """古い対話ターン群を構造化要約へ圧縮します。"""
+        """古い対話ターン群を構造化要約へ圧縮し、成功時は直近コンテキスト量を再計測して更新します。"""
         self._ensure_client_ready()
         assert self.ai_client is not None
-        return self.chat_session.compact(
+        result = self.chat_session.compact(
             client=self.ai_client,
             keep_recent_turns=keep_recent_turns,
             on_retry_warning=on_retry_warning,
         )
+        if result.compacted:
+            self._refresh_context_tokens_after_compaction()
+        return result
 
     def get_last_assistant_response(self) -> str:
         """直近ターンのAI回答テキストを返します（存在しない場合は空文字列）。"""

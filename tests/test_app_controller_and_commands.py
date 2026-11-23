@@ -487,3 +487,88 @@ def test_safe_turn_cancellation_preserves_role_integrity_and_kills_subprocess(tm
         search_res = ctrl.search_agent.search("Python", cancel_event=cancel_ev)
         assert search_res.aborted is True
         assert search_res.succeeded is False
+
+
+def test_compact_context_refreshes_context_tokens_and_keeps_existing_on_failure(tmp_path):
+    """
+    1. compact_context() で要約・圧縮が成功したとき、count_tokens で圧縮後のコンテキスト量を再計測し、
+       last_prompt_tokens および get_snapshot().context_tokens が即座に更新されること
+    2. count_tokens が失敗（例外等）した場合は、既存の last_prompt_tokens を維持すること
+    3. 圧縮対象がない場合（compacted=False）は count_tokens を呼ばず既存値を維持すること
+    """
+    from types import SimpleNamespace
+    from gemio.core.context import ChatTurn
+
+    def _turn(tid: str, prompt: str, resp: str) -> ChatTurn:
+        return ChatTurn(
+            turn_id=tid,
+            user_prompt=prompt,
+            contents=[
+                types.Content(role="user", parts=[types.Part.from_text(text=prompt)]),
+                types.Content(role="model", parts=[types.Part.from_text(text=resp)]),
+            ],
+            assistant_response=resp,
+        )
+
+    cfg = AppConfig(project_path=tmp_path)
+    with patch("gemio.core.client.genai.Client") as mock_sdk_cls:
+        mock_sdk = MagicMock()
+        mock_sdk_cls.return_value = mock_sdk
+        ctrl = GemioController(cfg)
+
+        # 圧縮前の肥大化状態（60,000 tokens -> warning）を模擬
+        ctrl.token_tracker.record(
+            SimpleNamespace(
+                usage_metadata=SimpleNamespace(
+                    prompt_token_count=60_000,
+                    candidates_token_count=500,
+                    thoughts_token_count=0,
+                    cached_content_token_count=0,
+                    tool_use_prompt_token_count=0,
+                    total_token_count=60_500,
+                )
+            ),
+            source="chat",
+        )
+        assert ctrl.get_snapshot().context_tokens == 60_000
+        assert ctrl.get_snapshot().context_health == "warning"
+
+        # ターン不足で compacted=False のときは count_tokens を呼ばず既存値維持
+        ctrl.chat_session.history.append_turn(_turn("t1", "質問1", "回答1"))
+        skip_res = ctrl.compact_context(keep_recent_turns=2)
+        assert skip_res.compacted is False
+        assert mock_sdk.models.count_tokens.call_count == 0
+        assert ctrl.get_snapshot().context_tokens == 60_000
+
+        # 3ターンまで増やして圧縮成功 + count_tokens 成功 -> 即座に 3,400 tokens (normal) へ更新
+        ctrl.chat_session.history.append_turn(_turn("t2", "質問2", "回答2"))
+        ctrl.chat_session.history.append_turn(_turn("t3", "質問3", "回答3"))
+        mock_sdk.models.generate_content.return_value = SimpleNamespace(
+            text="1. **目的・背景**: 要約テスト",
+            usage_metadata=SimpleNamespace(
+                prompt_token_count=20_000,
+                candidates_token_count=200,
+                thoughts_token_count=0,
+                cached_content_token_count=0,
+                tool_use_prompt_token_count=0,
+                total_token_count=20_200,
+            ),
+        )
+        mock_sdk.models.count_tokens.return_value = SimpleNamespace(total_tokens=3_400)
+
+        comp_res = ctrl.compact_context(keep_recent_turns=1)
+        assert comp_res.compacted is True
+        assert mock_sdk.models.count_tokens.call_count == 1
+        snap = ctrl.get_snapshot()
+        assert snap.context_tokens == 3_400
+        assert snap.context_health == "normal"
+        assert ctrl.get_token_usage()["compaction_api_calls"] == 1
+
+        # 2回目の圧縮で count_tokens が失敗した場合は既存の 3,400 を維持すること
+        ctrl.token_tracker.set_context_tokens(45_000)
+        ctrl.chat_session.history.append_turn(_turn("t4", "質問4", "回答4"))
+        mock_sdk.models.count_tokens.side_effect = RuntimeError("count_tokens unavailable")
+
+        comp_res2 = ctrl.compact_context(keep_recent_turns=1)
+        assert comp_res2.compacted is True
+        assert ctrl.get_snapshot().context_tokens == 45_000

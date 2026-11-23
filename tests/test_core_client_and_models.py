@@ -415,3 +415,62 @@ def test_genai_client_dynamic_model_catalog_caching_and_thinking_fallback():
         assert "thinking_config" not in second_cfg
         # 以降は自動的に Thinking 無効として記録されること
         assert client.supports_thinking("gemini-4-carbon") is False
+
+
+def test_token_usage_tracker_set_context_tokens_and_client_count_tokens():
+    """
+    1. TokenUsageTracker.set_context_tokens が非負整数のみを受け付け、
+       累積トークンやAPI呼び出し回数を変えずに last_prompt_tokens のみを更新すること
+    2. GenAIClient.count_tokens が system_instruction を先頭に含めて total_tokens を返し、
+       API例外や非整数応答時は例外を送出せず None を返すこと
+    """
+    from google.genai import types
+
+    tracker = TokenUsageTracker()
+    resp_chat = SimpleNamespace(
+        usage_metadata=_make_usage(prompt=50_000, candidates=300, total=50_300)
+    )
+    tracker.record(resp_chat, source="chat")
+
+    tracker.set_context_tokens(4_200)
+    snap = tracker.get_snapshot()
+    assert snap["last_prompt_tokens"] == 4_200
+    assert snap["cumulative_total_tokens"] == 50_300
+    assert snap["chat_api_calls"] == 1
+    assert snap["total_api_calls"] == 1
+
+    # bool や負数は無視されること
+    tracker.set_context_tokens(True)  # type: ignore[arg-type]
+    tracker.set_context_tokens(-10)
+    assert tracker.last_prompt_tokens == 4_200
+
+    with patch("google.genai.Client") as mock_sdk_cls:
+        mock_sdk = MagicMock()
+        mock_sdk_cls.return_value = mock_sdk
+        client = GenAIClient(model_name="gemini-4-neon")
+
+        base_contents = [
+            types.Content(
+                role="user",
+                parts=[types.Part.from_text(text="要約テキスト")],
+            )
+        ]
+        mock_sdk.models.count_tokens.return_value = SimpleNamespace(total_tokens=1_234)
+        counted = client.count_tokens(
+            base_contents,
+            system_instruction="システム指示",
+        )
+        assert counted == 1_234
+        # 呼び出し引数には system_instruction が先頭に追加され、元リストは変更されないこと
+        assert len(base_contents) == 1
+        called_contents = mock_sdk.models.count_tokens.call_args.kwargs["contents"]
+        assert len(called_contents) == 2
+        assert called_contents[0].parts[0].text == "システム指示"
+
+        # 例外発生時および非整数（MagicMock 等）応答時は安全に None を返すこと
+        mock_sdk.models.count_tokens.side_effect = RuntimeError("network error")
+        assert client.count_tokens(base_contents) is None
+
+        mock_sdk.models.count_tokens.side_effect = None
+        mock_sdk.models.count_tokens.return_value = MagicMock()
+        assert client.count_tokens(base_contents) is None
