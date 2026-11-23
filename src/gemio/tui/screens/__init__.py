@@ -8,9 +8,11 @@ from gemio.tui.screens.ask_user import AskUserModal
 from gemio.tui.screens.consent import TrustConsentModal
 from gemio.tui.screens.help import HelpModal
 from gemio.tui.screens.iteration import IterationLimitModal
+from gemio.tui.screens.materials import MaterialsModal
 from gemio.tui.screens.model import ModelSelectModal
 from gemio.tui.screens.sandbox import SandboxStatusModal
 from gemio.tui.screens.tokens import TokenUsageModal
+from gemio.tui.screens.user_search import UserSearchModal
 
 __all__ = [
     "ApiKeyModal",
@@ -18,8 +20,10 @@ __all__ = [
     "AskUserModal",
     "HelpModal",
     "IterationLimitModal",
+    "MaterialsModal",
     "ModelSelectModal",
     "SandboxStatusModal",
     "TokenUsageModal",
     "TrustConsentModal",
+    "UserSearchModal",
 ]

@@ -10,7 +10,6 @@ from gemio.tui.widgets.composer import (
     PromptTextArea,
 )
 from gemio.tui.widgets.header import StatusHeader, format_compact_tokens
-from gemio.tui.widgets.search_card import SearchTurnWidget
 from gemio.tui.widgets.timeline import ChatTimeline
 from gemio.tui.widgets.turn import (
     ActivityGroup,
@@ -31,7 +30,6 @@ __all__ = [
     "MIN_COMPOSER_LINES",
     "PromptComposer",
     "PromptTextArea",
-    "SearchTurnWidget",
     "StatusHeader",
     "TurnWidget",
     "UserMessageCard",

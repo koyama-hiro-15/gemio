@@ -60,7 +60,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--no-web-search",
         action="store_true",
-        help="AIによるWeb検索ツール（+WEB）を初期状態で無効化（-WEB）して起動します",
+        help="AIによる外部検索支援ツール（+WEB）を初期状態で無効化（-WEB）して起動します",
     )
     return parser.parse_args(argv)
 

@@ -83,19 +83,19 @@ class GemioCommandProvider(Provider):
                 lambda: app._execute_clear_session(clear_materials=True),
             ),
             (
-                "Search: AIによるWeb検索ツール (+WEB / -WEB) を切り替え (/search on|off)",
-                "作業エージェントからのWeb検索ツール呼び出しの許可 (ON/OFF) をトグルします",
+                "Web: AIからの外部検索協力依頼 (+WEB / -WEB) を切り替え (/web on|off)",
+                "作業エージェントからの外部検索支援ツール呼び出し (ON/OFF) をトグルします",
                 lambda: app._execute_web_search_toggle(None),
             ),
             (
-                "Search: 直近の単発検索結果を作業前提資料に追加 (/search --save)",
-                "直近に /search で取得した検索結果を作業前提資料ストアに保持します",
-                app._save_last_search_material_action,
+                "Materials: 作業前提資料の管理画面を開く (/materials)",
+                "作業前提資料の一覧閲覧・手動追加・削除・全クリアを行います",
+                app.action_show_materials,
             ),
             (
-                "Search: 保持中のWeb検索前提資料を破棄 (/search --clear)",
-                "セッション内のWeb検索結果資料をクリアします",
-                app._clear_search_materials_action,
+                "Materials: 保持中の作業前提資料をすべて破棄 (/materials clear)",
+                "セッション内の作業前提資料をすべてクリアします",
+                app._clear_materials_action,
             ),
             (
                 "Exit: Gemio を終了 (/exit)",

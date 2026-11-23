@@ -6,16 +6,14 @@ from rich.console import Console
 from textual import events
 from textual.app import ComposeResult
 from textual.screen import ModalScreen
-from textual.widgets import Collapsible, Footer, Static
+from textual.widgets import Collapsible, Footer, Static, TextArea
 
 from gemio.app import AppConfig, GemioController
-from gemio.core.search import SearchResult
-from gemio.tui import GemioApp
+from gemio.tui import GemioApp, MaterialsModal, UserSearchModal
 from gemio.tui.widgets import (
     ActivityBar,
     ChatTimeline,
     PromptComposer,
-    SearchTurnWidget,
     StatusHeader,
     TurnWidget,
 )
@@ -29,7 +27,7 @@ def _render_widget_plain(widget, width: int = 80) -> str:
 
 
 class _DummyApprovalModal(ModalScreen[str]):
-    """Phase 2 で ThreadModalBridge の往復同期動作を検証するための軽量テストモーダル。"""
+    """ThreadModalBridge の往復同期動作を検証するための軽量テストモーダル。"""
 
     def __init__(self, desc: str) -> None:
         super().__init__()
@@ -61,13 +59,11 @@ async def test_tui_layout_80x24_and_composer_keybindings(tmp_path):
             assert app.query_one(PromptComposer) is not None
             assert app.query_one(Footer) is not None
 
-            # フッター表示用の F4 バインディングが登録されていること
             f4_bindings = [b for b in app.BINDINGS if b.key == "f4" and b.show]
             assert len(f4_bindings) == 1
 
             editor = app.composer.editor
             assert app.focused is editor
-            # 未入力時のプレースホルダーはIME未確定文字と連続しないよう半角スペース1つで始まること
             assert editor.placeholder == " プロンプトまたはコマンド (/help 等) を入力..."
             rendered_first_line = "".join(seg.text for seg in editor.render_line(0))
             assert rendered_first_line.startswith(" プロンプト")
@@ -76,7 +72,6 @@ async def test_tui_layout_80x24_and_composer_keybindings(tmp_path):
             await pilot.pause()
             assert "1行目のテキスト" in editor.text
 
-            # Textual標準の F7 (全選択) -> Backspace で一括消去され、Ctrl+Z で元に戻せること
             await pilot.press("f7")
             await pilot.press("backspace")
             await pilot.pause()
@@ -86,12 +81,10 @@ async def test_tui_layout_80x24_and_composer_keybindings(tmp_path):
             await pilot.pause()
             assert editor.text == "1行目のテキスト\n2行目のテキスト"
 
-            # Ctrl+Y がエディタの Redo として衝突なく動作すること
             await pilot.press("ctrl+y")
             await pilot.pause()
             assert editor.text == ""
 
-            # タイムラインへフォーカスを移した後、F4 でエディタへ戻れること
             app.timeline.focus()
             await pilot.pause()
             assert app.focused is app.timeline
@@ -114,7 +107,6 @@ async def test_user_prompt_renders_raw_plain_text_while_assistant_renders_markdo
         ctrl = GemioController(cfg)
         assert ctrl.ai_client is not None
 
-        # 1回目のAPI応答: get_current_date ツール呼び出し / 2回目: Markdown回答
         fc_content = types.Content(
             role="model",
             parts=[types.Part.from_function_call(name="get_current_date", args={})],
@@ -150,7 +142,6 @@ async def test_user_prompt_renders_raw_plain_text_while_assistant_renders_markdo
                 assert len(turns) == 1
                 turn_w = turns[0]
 
-                # ユーザー入力が生テキストのまま一切変換・消失せず保持描画されていること
                 body_static = turn_w.user_card.query_one(".user-prompt-body", Static)
                 rendered_user = _render_widget_plain(body_static, width=100)
                 assert "# 見出し記号" in rendered_user
@@ -159,129 +150,102 @@ async def test_user_prompt_renders_raw_plain_text_while_assistant_renders_markdo
                 assert "[bold red]タグ保持[/bold red]" in rendered_user
                 assert "<tag>" in rendered_user
 
-                # ActivityGroup が表示され、デフォルトで折りたたまれていること
                 assert turn_w.activity_group.display is True
                 collapsible = turn_w.activity_group.query_one(Collapsible)
                 assert collapsible.collapsed is True
                 assert "get_current_date" in str(collapsible.title)
 
-                # AI回答カードが表示されていること
                 assert turn_w.assistant_card.display is True
                 assert turn_w.assistant_card.response_text == "確認結果: **すべて正常** です。"
 
-                # /cp (/copy) コマンドで直近回答がコピーされること
                 with patch.object(app, "copy_to_clipboard") as mock_copy:
                     app.composer.editor.insert("/cp")
                     await pilot.press("ctrl+j")
                     await pilot.pause()
                     mock_copy.assert_called_once_with("確認結果: **すべて正常** です。")
 
-                # /rewind コマンドで末尾 TurnWidget が除去されること
                 app.composer.editor.insert("/rewind")
                 await pilot.press("ctrl+j")
                 await pilot.pause()
                 assert len(list(app.timeline.query(TurnWidget))) == 0
 
 
-async def test_slash_commands_web_badge_toggle_and_search_card_selective_save(tmp_path):
+async def test_slash_commands_web_badge_toggle_and_materials_management(tmp_path):
     """
-    1. デフォルト +WEB で起動し、ヘッダーの #hdr-web クリックおよび /search on|off で
+    1. デフォルト +WEB で起動し、ヘッダーの #hdr-web クリックおよび /web on|off で
        +WEB (.badge-web-on) / -WEB (.badge-web-off) が即座に切り替わること
-    2. /search <query> は単発検索として表示され自動では M:0 のままであり、
-       カードの [+ 資料に追加] ボタン押下（または /search --save）で M:1 へ保持されること
+    2. /materials で MaterialsModal が開き、/materials rm / /materials clear で削除でき、
+       ヘッダーの M: カウンタへ即座に反映されること
     """
-    from textual.widgets import Button
-
     cfg = AppConfig(project_path=tmp_path)
     with patch("gemio.core.client.genai.Client"):
         ctrl = GemioController(cfg)
-        assert ctrl.search_agent is not None
+        app = GemioApp(ctrl)
 
-        ok_search = SearchResult(
-            query="Python *raw* [tag]",
-            response_text="### 検索サマリ\n最新仕様の解説です。",
-            sources=[{"title": "Python.org", "url": "https://www.python.org/doc/"}],
-            created_at="15:00:00",
-            succeeded=True,
-        )
+        async with app.run_test(size=(80, 24)) as pilot:
+            web_badge = app.status_header.query_one("#hdr-web", Static)
+            assert app.status_header.snapshot.web_badge_text == "+WEB"
+            assert web_badge.has_class("badge-web-on")
+            assert web_badge.styles.text_style.reverse is not True
 
-        with patch.object(ctrl.search_agent, "search", return_value=ok_search):
-            app = GemioApp(ctrl)
-            async with app.run_test(size=(80, 24)) as pilot:
-                web_badge = app.status_header.query_one("#hdr-web", Static)
-                assert app.status_header.snapshot.web_badge_text == "+WEB"
-                assert web_badge.has_class("badge-web-on")
-                assert web_badge.styles.text_style.reverse is not True
+            await pilot.hover("#hdr-web")
+            await pilot.pause()
+            assert web_badge.styles.text_style.reverse is True
 
-                # +WEB 状態でマウスホバー時に反転ハイライトすること
-                await pilot.hover("#hdr-web")
-                await pilot.pause()
-                assert web_badge.styles.text_style.reverse is True
+            # 1. #hdr-web バッジのクリックで -WEB (.badge-web-off) に切り替わること
+            await pilot.click("#hdr-web")
+            await pilot.pause()
+            assert app.status_header.snapshot.web_badge_text == "-WEB"
+            assert web_badge.has_class("badge-web-off")
+            assert not web_badge.has_class("badge-web-on")
 
-                # 1. #hdr-web バッジのクリックで -WEB (.badge-web-off) に切り替わること
-                await pilot.click("#hdr-web")
-                await pilot.pause()
-                assert app.status_header.snapshot.web_badge_text == "-WEB"
-                assert web_badge.has_class("badge-web-off")
-                assert not web_badge.has_class("badge-web-on")
+            await pilot.hover("#hdr-project")
+            await pilot.pause()
+            assert web_badge.styles.text_style.reverse is not True
+            await pilot.hover("#hdr-web")
+            await pilot.pause()
+            assert web_badge.styles.text_style.reverse is True
 
-                # -WEB 状態でもマウスホバー時に反転ハイライトすること
-                await pilot.hover("#hdr-project")
-                await pilot.pause()
-                assert web_badge.styles.text_style.reverse is not True
-                await pilot.hover("#hdr-web")
-                await pilot.pause()
-                assert web_badge.styles.text_style.reverse is True
+            # /web on で +WEB に戻ること
+            app.composer.editor.insert("/web on")
+            await pilot.press("ctrl+j")
+            await pilot.pause()
+            assert app.status_header.snapshot.web_badge_text == "+WEB"
+            assert web_badge.has_class("badge-web-on")
 
-                # /search on で +WEB に戻ること
-                app.composer.editor.insert("/search on")
-                await pilot.press("ctrl+j")
-                await pilot.pause()
-                assert app.status_header.snapshot.web_badge_text == "+WEB"
-                assert web_badge.has_class("badge-web-on")
+            # /edit と /model の即時ヘッダー更新
+            app.composer.editor.insert("/edit on")
+            await pilot.press("ctrl+j")
+            await pilot.pause()
+            assert app.status_header.snapshot.approval_badge_text == "EDIT"
 
-                # /edit と /model の即時ヘッダー更新
-                app.composer.editor.insert("/edit on")
-                await pilot.press("ctrl+j")
-                await pilot.pause()
-                assert app.status_header.snapshot.approval_badge_text == "EDIT"
+            app.composer.editor.insert("/model argon")
+            await pilot.press("ctrl+j")
+            await pilot.pause()
+            assert app.status_header.snapshot.current_model == "gemini-4-argon"
 
-                app.composer.editor.insert("/model argon")
-                await pilot.press("ctrl+j")
-                await pilot.pause()
-                assert app.status_header.snapshot.current_model == "gemini-4-argon"
+            # 2. /materials で管理モーダルが開くこと
+            ctrl.add_user_material("設計メモ", "前提仕様の内容")
+            app.composer.editor.insert("/materials")
+            await pilot.press("ctrl+j")
+            await pilot.pause()
+            assert isinstance(app.screen, MaterialsModal)
+            await pilot.press("escape")
+            await pilot.pause()
+            assert app.status_header.snapshot.materials_count == 1
 
-                # 2. /search 実行直後は自動保持されず M:0 のままで [+ 資料に追加] が有効であること
-                app.composer.editor.insert("/search Python *raw* [tag]")
-                await pilot.press("ctrl+j")
-                await app.workers.wait_for_complete()
-                await pilot.pause()
+            # /materials rm m1 で削除され M:0 になること
+            app.composer.editor.insert("/materials rm m1")
+            await pilot.press("ctrl+j")
+            await pilot.pause()
+            assert app.status_header.snapshot.materials_count == 0
 
-                search_cards = list(app.timeline.query(SearchTurnWidget))
-                assert len(search_cards) == 1
-                card = search_cards[0]
-                query_static = card.query_one(".search-query-body", Static)
-                assert "/search Python *raw* [tag]" in _render_widget_plain(
-                    query_static, width=100
-                )
-                assert app.status_header.snapshot.materials_count == 0
-                save_btn = card.query_one("#btn-save-material", Button)
-                assert save_btn.display is True
-                assert save_btn.disabled is False
-
-                # [+ 資料に追加] ボタンのクリックで M:1 に増え、ボタンが保持済で無効化されること
-                await pilot.click("#btn-save-material")
-                await pilot.pause()
-                assert app.status_header.snapshot.materials_count == 1
-                assert save_btn.disabled is True
-                assert "資料保持済" in str(save_btn.label)
-
-                # 3. /clear --all でタイムラインと資料カウントがリセットされること
-                app.composer.editor.insert("/clear --all")
-                await pilot.press("ctrl+j")
-                await pilot.pause()
-                assert len(list(app.timeline.query(SearchTurnWidget))) == 0
-                assert app.status_header.snapshot.materials_count == 0
+            # /clear --all が正常動作すること
+            ctrl.add_user_material("残存資料", "内容")
+            app.composer.editor.insert("/clear --all")
+            await pilot.press("ctrl+j")
+            await pilot.pause()
+            assert app.status_header.snapshot.materials_count == 0
 
 
 async def test_thread_modal_bridge_and_esc_safe_turn_cancel(tmp_path):
@@ -295,7 +259,6 @@ async def test_thread_modal_bridge_and_esc_safe_turn_cancel(tmp_path):
         ctrl = GemioController(cfg)
         assert ctrl.ai_client is not None
 
-        # ケース1: write_file ツール呼び出し -> Approval モーダルで 'y' を押して完了
         target_file = tmp_path / "hello.txt"
         fc_write = types.Content(
             role="model",
@@ -329,14 +292,12 @@ async def test_thread_modal_bridge_and_esc_safe_turn_cancel(tmp_path):
                 app.composer.editor.insert("hello.txt を作って")
                 await pilot.press("ctrl+j")
 
-                # ワーカースレッドがモーダルをプッシュするまで少し待機
                 for _ in range(30):
                     await pilot.pause(0.02)
                     if isinstance(app.screen, _DummyApprovalModal):
                         break
                 assert isinstance(app.screen, _DummyApprovalModal)
 
-                # モーダル上で 'y' キーを押して承認
                 await pilot.press("y")
                 await app.workers.wait_for_complete()
                 await pilot.pause()
@@ -344,7 +305,6 @@ async def test_thread_modal_bridge_and_esc_safe_turn_cancel(tmp_path):
                 assert target_file.read_text(encoding="utf-8") == "Hello TUI!"
                 assert app.activity_bar.is_busy is False
 
-        # ケース2: 長時間処理中に Esc を押すとアプリは終了せずターンのみ中断すること
         started = threading.Event()
         unblock = threading.Event()
 
@@ -370,7 +330,6 @@ async def test_thread_modal_bridge_and_esc_safe_turn_cancel(tmp_path):
                 assert started.is_set() is True
                 assert app2.controller.is_busy is True
 
-                # Esc キーでターン中断（アプリ自体は継続稼働）
                 await pilot.press("escape")
                 unblock.set()
                 await app2.workers.wait_for_complete()
@@ -386,7 +345,7 @@ async def test_thread_modal_bridge_and_esc_safe_turn_cancel(tmp_path):
 async def test_phase1_layout_header_copy_buttons_collapsible_and_composer_height(tmp_path):
     """
     1. StatusHeader の全バッジが 80x24 画面内に収まって表示されること
-    2. UserMessageCard / AssistantMessageCard / SearchTurnWidget の Copy ボタンがヘッダー行内に収まること
+    2. UserMessageCard / AssistantMessageCard の Copy ボタンがヘッダー行内に収まること
     3. ActivityGroup 展開時の高さが内容の行数（タイトル1行 + ログ行数）に一致すること
     4. PromptTextArea が改行ごとに即座に1行ずつ伸長すること（border分の2行を考慮）
     """
@@ -400,7 +359,6 @@ async def test_phase1_layout_header_copy_buttons_collapsible_and_composer_height
         async with app.run_test(size=(80, 24)) as pilot:
             await pilot.pause()
 
-            # 1. StatusHeader の全バッジ（#hdr-web 含む）が 80x24 ヘッダー領域内に収まっていること
             hdr = app.status_header
             for wid in (
                 "#hdr-project",
@@ -414,23 +372,19 @@ async def test_phase1_layout_header_copy_buttons_collapsible_and_composer_height
                 assert badge.region.width > 0
                 assert hdr.region.contains_region(badge.region), f"{wid} がヘッダー外にはみ出しています"
 
-            # 2. 対話ログ・検索カードの Copy ボタンが各カードのヘッダー行内に収まること
             tw = TurnWidget("hello\nworld")
             app.timeline.mount_entry(tw, force_scroll=True)
             tw.activity_group.add_tool_call("12:00:00", "Tool call: read_file (file_path='a.py')")
             tw.activity_group.add_tool_call("12:00:01", "Tool call: write_file (file_path='b.py')")
             tw.assistant_card.set_response("AI answer", timestamp="12:00:02")
-            sw = SearchTurnWidget("query")
-            app.timeline.mount_entry(sw, force_scroll=True)
             await pilot.pause()
 
-            for card in (tw.user_card, tw.assistant_card, sw):
+            for card in (tw.user_card, tw.assistant_card):
                 row = card.query_one(".card-header-row")
                 copy_btn = card.query_one(".copy-btn", Button)
                 assert copy_btn.region.width > 0
                 assert row.region.contains_region(copy_btn.region)
 
-            # 3. ActivityGroup 展開時の高さが内容行数（タイトル1行 + 2行 = 3行）と一致すること
             col = tw.activity_group.query_one(Collapsible)
             col.collapsed = False
             await pilot.pause()
@@ -438,7 +392,6 @@ async def test_phase1_layout_header_copy_buttons_collapsible_and_composer_height
             assert items.region.height == 2
             assert tw.activity_group.region.height == 3
 
-            # 4. PromptTextArea が1行→2行→3行で即座に内寸1→2→3行へ伸長すること
             ed = app.composer.editor
             ed.load_text("line1")
             await pilot.pause()
@@ -468,14 +421,12 @@ async def test_composer_scrolls_immediately_on_newline_at_max_height(tmp_path):
 
         async with app.run_test(size=(80, 24)) as pilot:
             editor = app.composer.editor
-            # 6行入力して最大高さ（外寸8行、内寸6行）まで拡大させる
             editor.insert("1\n2\n3\n4\n5\n6")
             await pilot.pause()
             assert editor.outer_size.height == 8
             assert editor.content_region.height == 6
             assert editor.scroll_y == 0
 
-            # 6行目→7行目、7行目→8行目、8行目→9行目の各改行直後に即座に追従すること
             for expected_row, expected_scroll in ((6, 1), (7, 2), (8, 3)):
                 await pilot.press("enter")
                 await pilot.pause()
@@ -538,26 +489,33 @@ async def test_thinking_model_enables_thoughts_and_displays_in_activity_group(tm
             assert turns[0].assistant_card.response_text == "最終的な結論です。"
 
 
-async def test_agent_web_search_tool_in_tui_confirms_even_in_trust_mode_and_logs_sources(
+async def test_request_user_search_in_tui_opens_modal_and_injects_material_immediately_in_same_turn(
     tmp_path,
 ):
     """
-    TRUST モード中であっても ChatAgent が web_search ツールを呼んだ際は ApprovalModal（全文表示）が開き、
-    承認 ('y') するとステートレス検索結果を作業文脈に統合して回答し、ActivityGroup に出典が記録されること
+    TRUST モード中に ChatAgent が request_user_search を呼び出した際:
+    1. UserSearchModal が開き、ユーザーがテキストを貼り付けて [前提資料に追加し送信] を押すと
+       MaterialStore に AI 指定タイトルで登録され、ヘッダーの M:1 カウンタが即更新されること
+    2. 同じターン内の直後のイテレーション（2回目の generate_content 呼び出し）の冒頭プロンプトへ
+       登録された資料が即座に注入されていること、および TRUST モードが維持されていること
     """
     cfg = AppConfig(project_path=tmp_path)
     with patch("gemio.core.client.genai.Client"):
         ctrl = GemioController(cfg)
         ctrl.set_trust_mode(True)
         assert ctrl.ai_client is not None
-        assert ctrl.search_agent is not None
 
         fc_search = types.Content(
             role="model",
             parts=[
                 types.Part.from_function_call(
-                    name="web_search",
-                    args={"query": "2026年 最新のPythonパッケージング標準仕様"},
+                    name="request_user_search",
+                    args={
+                        "purpose": "最新のPythonパッケージング仕様を確認するため",
+                        "queries": ["Python packaging pyproject.toml PEP 735"],
+                        "what_to_check": "dependency-groups の書式",
+                        "suggested_title": "PEP 735 Dependency Groups",
+                    },
                 )
             ],
         )
@@ -569,54 +527,55 @@ async def test_agent_web_search_tool_in_tui_confirms_even_in_trust_mode_and_logs
         resp_final = MagicMock(
             candidates=[],
             function_calls=None,
-            text="最新の仕様に基づいて設定を構成しました。",
+            text="PEP 735 の形式に基づいて設定を案内しました。",
         )
 
-        mock_search_res = SearchResult(
-            query="2026年 最新のPythonパッケージング標準仕様",
-            response_text="pyproject.toml の標準フィールド解説。",
-            sources=[
-                {
-                    "title": "PyPA Specifications",
-                    "url": "https://packaging.python.org/en/latest/specifications/",
-                }
-            ],
-            created_at="16:10:00",
-            succeeded=True,
-        )
+        captured_contents_calls: list[list[types.Content]] = []
+
+        def fake_generate_content(contents, **kwargs):
+            captured_contents_calls.append(list(contents))
+            if len(captured_contents_calls) == 1:
+                return resp_tool
+            return resp_final
 
         with patch.object(
-            ctrl.ai_client, "generate_content", side_effect=[resp_tool, resp_final]
-        ), patch.object(
-            ctrl.search_agent, "search", return_value=mock_search_res
+            ctrl.ai_client, "generate_content", side_effect=fake_generate_content
         ):
-            app = GemioApp(
-                ctrl,
-                approval_screen_factory=lambda desc: _DummyApprovalModal(desc),
-            )
+            app = GemioApp(ctrl)
             async with app.run_test(size=(80, 24)) as pilot:
-                app.composer.editor.insert("最新のパッケージング仕様を調べて教えて")
+                app.composer.editor.insert("最新のdependency-groups仕様で設定して")
                 await pilot.press("ctrl+j")
 
-                for _ in range(30):
+                for _ in range(40):
                     await pilot.pause(0.02)
-                    if isinstance(app.screen, _DummyApprovalModal):
+                    if isinstance(app.screen, UserSearchModal):
                         break
-                assert isinstance(app.screen, _DummyApprovalModal)
-                assert "2026年 最新のPythonパッケージング標準仕様" in app.screen.desc
+                assert isinstance(app.screen, UserSearchModal)
 
-                await pilot.press("y")
+                ta = app.screen.query_one("#user-search-textarea", TextArea)
+                ta.load_text("[dependency-groups]\ndev = ['pytest>=9.0']")
+                await pilot.pause()
+
+                await pilot.click("#btn-save-material")
                 await app.workers.wait_for_complete()
                 await pilot.pause()
 
+                assert len(captured_contents_calls) == 2
+                # 2回目のAPI呼び出し（同ターン次イテレーション）の冒頭ユーザー発話に資料が即注入されていること
+                second_turn_first_text = captured_contents_calls[1][0].parts[0].text
+                assert "【作業前提資料】" in second_turn_first_text
+                assert "PEP 735 Dependency Groups" in second_turn_first_text
+                assert "[dependency-groups]" in second_turn_first_text
+
+                assert app.status_header.snapshot.materials_count == 1
+                assert ctrl.project.trust_mode is True
                 turns = list(app.timeline.query(TurnWidget))
                 assert len(turns) == 1
+                assert "request_user_search" in turns[0].activity_group.tool_names
                 assert (
                     turns[0].assistant_card.response_text
-                    == "最新の仕様に基づいて設定を構成しました。"
+                    == "PEP 735 の形式に基づいて設定を案内しました。"
                 )
-                assert "web_search" in turns[0].activity_group.tool_names
-                assert len(ctrl.chat_session.materials) == 0
 
 
 async def test_compact_command_immediately_updates_header_and_token_modal(tmp_path):
@@ -646,7 +605,6 @@ async def test_compact_command_immediately_updates_header_and_token_modal(tmp_pa
         mock_sdk_cls.return_value = mock_sdk
         ctrl = GemioController(cfg)
 
-        # 圧縮前は 160,000 tokens（danger状態）・3ターン保持の状態を準備
         ctrl.token_tracker.record(
             SimpleNamespace(
                 usage_metadata=SimpleNamespace(
@@ -685,18 +643,15 @@ async def test_compact_command_immediately_updates_header_and_token_modal(tmp_pa
             assert "Ctx:160.0k" in str(tok_badge.render())
             assert tok_badge.has_class("badge-ctx-danger")
 
-            # /compact 1 を実行
             app.composer.editor.insert("/compact 1")
             await pilot.press("ctrl+j")
             await app.workers.wait_for_complete()
             await pilot.pause()
 
-            # 次のプロンプトを待たずにヘッダが即座に更新されていること
             assert "Ctx:2.5k" in str(tok_badge.render())
             assert tok_badge.has_class("badge-ctx-normal")
             assert not tok_badge.has_class("badge-ctx-danger")
 
-            # /tokens ダイアログを開くと即座に最新値（2,500 tokens・4件）が表示されていること
             app.composer.editor.insert("/tokens")
             await pilot.press("ctrl+j")
             await pilot.pause()

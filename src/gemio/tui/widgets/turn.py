@@ -183,7 +183,7 @@ class ActivityGroup(Widget):
         self._append_activity_line(line)
 
     def add_search_info(self, timestamp: str, body: str) -> None:
-        """AIによる web_search ツール実行時の参照元ドメイン情報等を折りたたみログへ追加します。"""
+        """外部検索協力依頼や作業前提資料登録のサマリログを折りたたみログへ追加します。"""
         cleaned = body.strip()
         if not cleaned:
             return
@@ -192,7 +192,7 @@ class ActivityGroup(Widget):
         line = Text()
         if timestamp:
             line.append(f"[{timestamp}] ", style="dim")
-        line.append("[Web Search] ", style="bold cyan")
+        line.append("[Search Assist] ", style="bold cyan")
         line.append(cleaned, style="cyan")
 
         self._append_activity_line(line)

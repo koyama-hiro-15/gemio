@@ -1,7 +1,7 @@
 # 🛠️ Gemio コントリビューション & 拡張開発ガイド
 
 **作成日:** 2026年11月14日  
-**最終更新日:** 2026年11月23日  
+**最終更新日:** 2026年11月24日  
 **ステータス:** 運用中  
 **対象システム:** Gemio リポジトリ全体 (`src/gemio/`, `tests/`, `manuals/`, `docs/`, `Dockerfile`, `compose.yaml`)  
 
@@ -190,12 +190,12 @@ pytest  # ホスト側でも docker exec gemio-sandbox pytest でも実行可能
 | **Core** | `tests/test_core_tools_and_prompts.py` | 標準日時ツール、`ToolRegistry` / `StaticToolProvider`、`.gemio/tools/` ローダーと物理パス秘匿、`agent_tools` と `agent_toolsets` の一致検証、`SystemPromptComposer` |
 | **Core** | `tests/test_core_skills_and_dynamic_tools.py` | `parse_skill_markdown`、固定2箇所からの `SkillLoader`・優先上書き・遅延ロード例外時のパス秘匿、`DynamicToolsetProvider` (`request_tools`) と `activate_skill` のループ途中即時反映 |
 | **Core** | `tests/test_core_agent_chat.py` | `ChatAgent` のFunction Callingループ、`ask_user` / Abort時の複数 `function_call` ペア整合性、ループ上限継続とロールバック、503中断時のツール結果保持、`MaterialStore` 操作非露出検証 |
-| **Core** | `tests/test_core_agent_search.py` | ステートレス `SearchAgent` のGoogle検索専用Config・1問1答検証、出典抽出・リダイレクトURL除外整形、`validate_search_query_safety`（物理パス・機密キー・長文遮断）、ローカル履歴非送信 |
+| **Core** | `tests/test_core_agent_search.py` | `validate_search_query_safety`（物理パス・機密キー・長文遮断）、貼り付け入力テキスト診断 `diagnose_user_pasted_text`（機密ブロック・パス注意・IPI/サイズ警告）、`sanitize_pasted_text`、Spotlighting整形検証 |
 | **Project** | `tests/test_project_base.py` | ファイル操作一式、パストラバーサル・シンボリックリンク遮断、機密ファイル/ディレクトリ・`.git`・`.devcontainer`・`.gemio`・`*.egg-info` 保護、BFS探索と省略通知、3段階承認、サーキットブレーカー |
 | **Project** | `tests/test_project_developer.py` | コンテナ実体判定、脱獄構成の `SandboxSecurityError` 拒否、環境変数スクラブ、値非保持の機密キー名検出、`parse_proc_mountinfo` / `classify_workspace_entry` / `inspect_sandbox_status`、`run_sandbox_command` 全文表示・タイムアウト・プロセスキル |
-| **App** | `tests/test_app_controller_and_commands.py` | `app/` のUI非依存AST検査、`AppConfig`、全スラッシュコマンド解析、`GemioController` のAPIキー遅延設定・`web_search` 全モード常時全文確認と `+WEB`/`-WEB` 切替・単発 `/search` と任意資料化・安全なターン中断 |
+| **App** | `tests/test_app_controller_and_commands.py` | `app/` のUI非依存AST検査、`AppConfig`、全スラッシュコマンド解析（`/web`, `/materials` 含む）、`GemioController` のAPIキー遅延設定・`request_user_search` 全フロー・資料管理API・安全なターン中断 |
 | **TUI** | `tests/test_tui_app.py` | 最小 `80×24` での4ゾーンマウント、`PromptComposer` キー操作・Undo全消去、ユーザー入力の生テキスト保持描画 vs AI回答のMarkdown描画、`ActivityGroup` 折りたたみ、`Esc` ターン中断 |
-| **TUI** | `tests/test_tui_modals.py` | 全9種 `ModalScreen`（`ApprovalModal`, `AskUserModal`, `IterationLimitModal`, `ApiKeyModal`, `TrustConsentModal`, `SandboxStatusModal`, `TokenUsageModal`, `ModelSelectModal`, `HelpModal`）と `Ctrl+P` コマンドパレットの往復検証 |
+| **TUI** | `tests/test_tui_modals.py` | 全11種 `ModalScreen`（`UserSearchModal`, `MaterialsModal` 含む）の80×24表示・入力テキスト診断・無害化・`[Open]`/`[Copy]`・`Ctrl+P` コマンドパレットの往復検証 |
 | **CLI** | `tests/test_cli_main.py` | コードベースからの `prompt_toolkit` 完全撤去＆トップレベルUI非依存AST検査、`parse_args`、非TTY/不正パス/セキュリティ違反時のプリフライト検証、`GemioApp` 起動・終了コード伝播 |
 
 ---
@@ -265,3 +265,4 @@ pytest  # ホスト側でも docker exec gemio-sandbox pytest でも実行可能
 | 2026-11-17 | AI Agent | 運用中 | Textual TUI 一本化・4層パッケージ再編（`#014` / `v0.2.0`）に伴い、4層単方向依存ルール、スラッシュコマンド＆コマンドパレット拡張手順、TUIウィジェット規約（ユーザー生テキスト表示原則）、および新テストモジュール構成へ更新。 |
 | 2026-11-21 | AI Agent | 運用中 | 動的モデルカタログ・Thinking統合（`#015`）および回答コピー操作の整理（`Ctrl+Y` を Redo 維持とし `/copy`・`[Copy]` ボタンへ集約）に伴い該当記載を更新。 |
 | 2026-11-23 | AI Agent | 運用中 | 作業エージェント連携型Web検索と `+WEB`/`-WEB` スイッチ（`#016`）の実装に伴い、単体テストモジュールの責務一覧を更新。 |
+| 2026-11-24 | AI Agent | 運用中 | 人間介在型 Web 検索支援（`#017`）の実装に伴い、テスト一覧表の `test_core_agent_search.py`・`test_app_controller_and_commands.py`・`test_tui_modals.py` 記述を更新。 |

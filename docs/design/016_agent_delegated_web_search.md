@@ -1,12 +1,14 @@
 # #016 作業エージェント連携型Web検索（Agent-as-a-Tool）と検索スイッチ 設計書
 
 **作成日:** 2026年11月23日  
-**最終更新日:** 2026年11月23日  
-**ステータス:** 実装完了（現行）  
+**最終更新日:** 2026年11月24日  
+**ステータス:** 置換済み（Superseded by #017）  
 **対象システム:** `src/gemio/core/` (`search.py`, `prompts.py`, `tools/registry.py`, `tools/dynamic.py`), `src/gemio/app/` (`config.py`, `commands.py`, `controller.py`, `prompts.py`, `state.py`), `src/gemio/cli/main.py`, `src/gemio/tui/` (`app.py`, `messages.py`, `commands_palette.py`, `styles/app.tcss`, `widgets/header.py`, `widgets/search_card.py`, `widgets/welcome.py`, `screens/help.py`), `tests/`  
 
 ### 【要約】
 従来の「ユーザー手動 `/search` 専用・全検索結果の `MaterialStore` 自動蓄積」方式を見直し、ローカル作業中の `ChatAgent` がツール呼び出し（`web_search`）を通じて**コンテキスト隔離・ステートレス化された `SearchAgent` へ質問を委譲し、作業文脈へ直接統合する設計（Agent-as-a-Tool）**を導入します。外部データ送信に伴う機密漏洩を防ぐため、検索ツールは既存の承認モード（`NORMAL` / `EDIT` / `TRUST`）から独立した**「送信プロンプト全文の常時確認」**とし、一律デフォルト `ON` で起動しつつステータスヘッダーの **`+WEB` / `-WEB` バッジ**（および `/search on|off`）で即座に有効・無効を切り替えられる構成とします。あわせて既存の `/search <query>` コマンドは「自動蓄積しない単発検索＋任意の資料追加」として再定義します。
+
+> **💡 現行仕様に関する注記:** 本設計における Google Search Grounding 連携（`SearchAgent` / `/search`）は、正式リリースに向けた利用規約適合性レビューの結果、後続の [`017_human_assisted_web_search.md`](./017_human_assisted_web_search.md)（人間介在型 Web 検索支援）によって全面的に置き換えられました（経緯は [`web_search_design_minutes.md`](../tech_docs/web_search_design_minutes.md) を参照）。現行の正確な仕様は [`manuals/07_ARCHITECTURE_REFERENCE.md`](../../manuals/07_ARCHITECTURE_REFERENCE.md) を参照してください。
 
 ---
 
@@ -290,3 +292,4 @@ StatusHeader: [Gemio] proj | STD | NORMAL +WEB | gemini-4-neon | Ctx:14.2k M:0
 | 2026-11-23 | AI Agent | 設計完了（実装準備中） | 初版作成。`ChatAgent` からステートレス `SearchAgent` を呼び出す `web_search` ツール統合、全承認モード共通の全文常時確認、`+WEB`/`-WEB` ヘッダーバッジ（一律デフォルトON）、および `/search` 単発検索＋任意資料追加の設計を策定。 |
 | 2026-11-23 | AI Agent | 設計完了（実装準備中） | コーディング以外の文書作成・企画・一般リサーチ用途にも対応しつつ強い拘束力を維持するため、検索システムプロンプトおよび機密除外ルールを3領域（①文書・業務情報、②個人情報・非公開固有名詞、③コード・環境・認証情報）へ汎用化・拡充。 |
 | 2026-11-23 | AI Agent | 実装完了（現行） | Core / App / CLI / TUI の全レイヤー実装および単体・ヘッドレスTUIテスト（全88件合格）を完了し、関連ドキュメントへ反映。 |
+| 2026-11-24 | AI Agent | 置換済み（Superseded by #017） | Google Search Grounding 規約適合性レビュー（[`web_search_design_minutes.md`](../tech_docs/web_search_design_minutes.md)）に基づき [`#017`](./017_human_assisted_web_search.md) へ置換。 |

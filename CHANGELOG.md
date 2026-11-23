@@ -8,6 +8,19 @@
 
 ---
 
+## [Unreleased]
+
+### Changed（変更）
+- **Web 検索連携を「人間介在型 Web 検索支援 (`#017`)」へ刷新**:
+  - 利用規約適合性レビューの結果、Gemini API の Google Search Grounding 連携（`SearchAgent`・`/search`）を廃止し、**`request_user_search` ツール＋専用ダイアログ（`UserSearchModal`）**へ切り替えました。
+  - AI が提示する調査目的・確認観点・推奨クエリに対し、`[Copy]` / Google検索 `[Open]` ボタン（コンテナ内起動 `in_container` 時は非表示）、複数行 `TextArea`、リアルタイム**入力テキスト診断**（APIキー/秘密鍵等の機密情報ブロック、パス文字列の注意喚起、不可視文字・制御トークンのワンクリック無害化、IPI疑い/サイズ警告）、および **「通常応答で送信」vs「前提資料に追加し送信」** の選択を提供しました。
+  - スラッシュコマンドをスイッチ専用の **`/web [on|off]`** と、作業前提資料の閲覧・手動追加・削除を行う **`/materials [clear | rm <id>]`**（`MaterialsModal`）へ再編しました。
+
+### Removed（削除）
+- Google Search Grounding 用の `SearchAgent`、`SearchResult`、`/search`（`/s`）コマンド、`SearchTurnWidget`、`MaterialKind.WEB_SEARCH` を削除しました。
+
+---
+
 ## [0.3.0] - 2026-11-23
 
 作業エージェントから隔離された検索エージェントを直接呼び出せる **Agent-as-a-Tool 型 Web 検索機能（`web_search` ツール・`+WEB` / `-WEB` スイッチ）**、および API からの **動的モデルカタログ取得・Thinking（思考ログ）統合** を追加しました。

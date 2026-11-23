@@ -48,6 +48,7 @@ class TokenUsageModal(ModalScreen[str | None]):
                 classes="modal-data-table",
             )
             with Horizontal(classes="modal-buttons"):
+                yield Button("資料管理 (/materials)", id="btn-materials", variant="default", compact=True)
                 yield Button("履歴クリア (/clear)", id="btn-clear", variant="warning", compact=True)
                 yield Button("資料含め全クリア", id="btn-clear-all", variant="error", compact=True)
                 yield Button("閉じる (Esc)", id="btn-close", variant="primary", compact=True)
@@ -133,7 +134,9 @@ class TokenUsageModal(ModalScreen[str | None]):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         event.stop()
-        if event.button.id == "btn-clear":
+        if event.button.id == "btn-materials":
+            self.dismiss("materials")
+        elif event.button.id == "btn-clear":
             self.dismiss("clear")
         elif event.button.id == "btn-clear-all":
             self.dismiss("clear_all")

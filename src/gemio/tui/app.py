@@ -2,7 +2,7 @@
 Gemio Textual TUI メインアプリケーション（GemioApp）モジュール。
 
 4ゾーンレイアウト（StatusHeader / ChatTimeline / ActivityBar + PromptComposer / Footer）、
-全9種の ModalScreen、コマンドパレット (Ctrl+P)、ワーカースレッド同期ブリッジ、
+ModalScreen 群、コマンドパレット (Ctrl+P)、ワーカースレッド同期ブリッジ、
 およびアプリを終了させない安全なターン中断（Esc）を統合管理します。
 """
 
@@ -23,13 +23,15 @@ from gemio.app import (
     ExitCommand,
     GemioController,
     HelpCommand,
+    MaterialsCommand,
     ModelCommand,
     RewindCommand,
     SandboxCommand,
-    SearchCommand,
-    SearchOutcome,
     TokensCommand,
     TrustModeCommand,
+    UserSearchReply,
+    UserSearchRequest,
+    WebModeCommand,
     parse_slash_command,
 )
 from gemio.core.agent import ChatTurnResult
@@ -46,7 +48,6 @@ from gemio.tui.messages import (
     CopyTextRequested,
     HeaderBadgeClicked,
     PromptSubmitted,
-    SaveSearchMaterialRequested,
 )
 from gemio.tui.screens import (
     ApiKeyModal,
@@ -54,16 +55,17 @@ from gemio.tui.screens import (
     AskUserModal,
     HelpModal,
     IterationLimitModal,
+    MaterialsModal,
     ModelSelectModal,
     SandboxStatusModal,
     TokenUsageModal,
     TrustConsentModal,
+    UserSearchModal,
 )
 from gemio.tui.widgets import (
     ActivityBar,
     ChatTimeline,
     PromptComposer,
-    SearchTurnWidget,
     StatusHeader,
     TurnWidget,
     WelcomeBanner,
@@ -97,6 +99,10 @@ class GemioApp(App[int]):
             [str, list[str] | None, str], ModalScreen[str]
         ]
         | None = None,
+        user_search_screen_factory: Callable[
+            [UserSearchRequest], ModalScreen[UserSearchReply]
+        ]
+        | None = None,
         iteration_limit_screen_factory: Callable[
             [], ModalScreen[tuple[bool, int]]
         ]
@@ -111,6 +117,15 @@ class GemioApp(App[int]):
             self,
             approval_screen_factory=approval_screen_factory or ApprovalModal,
             ask_user_screen_factory=ask_user_screen_factory or AskUserModal,
+            user_search_screen_factory=(
+                user_search_screen_factory
+                or (
+                    lambda req: UserSearchModal(
+                        req,
+                        forbidden_paths=self.controller.get_forbidden_paths_for_diagnosis(),
+                    )
+                )
+            ),
             iteration_limit_screen_factory=(
                 iteration_limit_screen_factory or IterationLimitModal
             ),
@@ -263,28 +278,6 @@ class GemioApp(App[int]):
     def on_cancel_turn_requested(self, message: CancelTurnRequested) -> None:
         self.action_cancel_turn()
 
-    def on_save_search_material_requested(
-        self,
-        message: SaveSearchMaterialRequested,
-    ) -> None:
-        if self.controller.is_busy:
-            self.notify("AI処理中は資料を追加できません。", severity="warning")
-            return
-        outcome = self.controller.save_search_result_to_materials(message.result)
-        if outcome is None:
-            self.notify("追加可能な検索結果がありません。", severity="warning")
-            return
-        if isinstance(message.card, SearchTurnWidget):
-            message.card.set_outcome(outcome)
-        self.refresh_status()
-        if outcome.material_status == "added":
-            self.notify(
-                f"検索結果を作業前提資料 [第{outcome.total_materials}弾] として保持しました。"
-            )
-        else:
-            self.notify("同一内容の資料がすでに保持されています。")
-        self.composer.focus_editor()
-
     def on_header_badge_clicked(self, message: HeaderBadgeClicked) -> None:
         if message.target == "sandbox":
             self.action_show_sandbox()
@@ -346,22 +339,20 @@ class GemioApp(App[int]):
             self._execute_rewind(parsed.steps)
         elif isinstance(parsed, CompactCommand):
             self._start_compact_worker(parsed.keep_recent_turns)
-        elif isinstance(parsed, SearchCommand):
-            if parsed.toggle_enabled is not None:
-                self._execute_web_search_toggle(parsed.toggle_enabled)
-            elif parsed.save_last:
-                self._save_last_search_material_action()
-            elif parsed.clear_materials:
-                self._clear_search_materials_action()
-            elif parsed.show_help:
-                self.push_screen(HelpModal(initial_tab="tab-commands"))
+        elif isinstance(parsed, WebModeCommand):
+            self._execute_web_search_toggle(parsed.enable)
+        elif isinstance(parsed, MaterialsCommand):
+            if parsed.action == "clear":
+                self._clear_materials_action()
+            elif parsed.action == "remove":
+                self._remove_material_action(parsed.target)
             else:
-                self._start_search_worker(parsed.query)
+                self.action_show_materials()
         elif isinstance(parsed, ChatPromptInput):
             self._start_chat_worker(parsed.text)
 
     # =====================================================================
-    # 3. 状態変更・セッション操作ヘルパー
+    # 3. 状態変更・セッション・作業前提資料操作ヘルパー
     # =====================================================================
 
     def _switch_model_directly(self, target_model: str) -> None:
@@ -372,7 +363,7 @@ class GemioApp(App[int]):
     def _execute_web_search_toggle(self, enable: bool | None = None) -> None:
         if self.controller.is_busy:
             self.notify(
-                "AI処理中はWeb検索設定を変更できません。",
+                "AI処理中は外部検索支援設定を変更できません。",
                 severity="warning",
             )
             return
@@ -380,45 +371,36 @@ class GemioApp(App[int]):
         self.refresh_status_and_welcome()
         if not changed:
             label = "+WEB (有効)" if enabled else "-WEB (無効)"
-            self.notify(f"AIによるWeb検索ツールはすでに {label} です。")
+            self.notify(f"AIからの外部検索協力依頼はすでに {label} です。")
             return
         if enabled:
             self.notify(
-                "+WEB: AIによるWeb検索ツールを有効化しました（送信前に都度確認を行います）。"
+                "+WEB: AIからの外部検索協力依頼を有効化しました。"
             )
         else:
-            self.notify("-WEB: AIによるWeb検索ツールを無効化しました。")
+            self.notify("-WEB: AIからの外部検索協力依頼を無効化しました。")
 
-    def _save_last_search_material_action(self) -> None:
-        if self.controller.is_busy:
-            self.notify("AI処理中は資料を追加できません。", severity="warning")
-            return
-        outcome = self.controller.save_search_result_to_materials()
-        if outcome is None:
-            self.notify(
-                "保持可能な直近の単発検索結果がありません。先に /search <内容> を実行してください。",
-                severity="warning",
-            )
-            return
-        for card in reversed(list(self.timeline.query(SearchTurnWidget))):
-            if card.response_text == outcome.result.response_text:
-                card.set_outcome(outcome)
-                break
-        self.refresh_status()
-        if outcome.material_status == "added":
-            self.notify(
-                f"直近の検索結果を作業前提資料 [第{outcome.total_materials}弾] として保持しました。"
-            )
-        else:
-            self.notify("同一内容の資料がすでに保持されています。")
-
-    def _clear_search_materials_action(self) -> None:
+    def _clear_materials_action(self) -> None:
         if self.controller.is_busy:
             self.notify("AI処理中は資料をクリアできません。", severity="warning")
             return
-        cleared = self.controller.clear_search_materials()
+        cleared = self.controller.clear_materials()
         self.refresh_status()
         self.notify(f"保持していた作業前提資料（{cleared}件）を破棄しました。")
+
+    def _remove_material_action(self, target: str) -> None:
+        if self.controller.is_busy:
+            self.notify("AI処理中は資料を削除できません。", severity="warning")
+            return
+        removed = self.controller.remove_material(target)
+        if removed is None:
+            self.notify(
+                f"指定された資料 '{target}' が見つかりませんでした。",
+                severity="warning",
+            )
+            return
+        self.refresh_status()
+        self.notify(f"作業前提資料 '{removed.material_id}: {removed.title}' を削除しました。")
 
     def _set_normal_approval_mode(self) -> None:
         _, changed = self.controller.set_approval_mode(APPROVAL_MODE_NORMAL)
@@ -508,7 +490,7 @@ class GemioApp(App[int]):
         self.notify(f"直近 {len(removed_turns)} ターンを巻き戻しました。")
 
     # =====================================================================
-    # 4. 非同期ワーカー実行（通常対話 / Web検索 / コンテキスト圧縮 / 診断）
+    # 4. 非同期ワーカー実行（通常対話 / コンテキスト圧縮 / 診断）
     # =====================================================================
 
     def _start_chat_worker(self, prompt_text: str) -> None:
@@ -600,72 +582,6 @@ class GemioApp(App[int]):
         self.refresh_status()
         self.timeline.follow_if_near_bottom()
         self.notify(f"エラーが発生しました: {error}", severity="error")
-
-    def _start_search_worker(self, query: str) -> None:
-        if not self.controller.is_client_ready:
-            self.notify(
-                "APIキーが設定されていません。先にAPIキーを入力してください。",
-                severity="error",
-            )
-            return
-
-        search_widget = SearchTurnWidget(query)
-        self.timeline.mount_entry(search_widget, force_scroll=True)
-        self.activity_bar.start_busy("Webを検索して最新情報を取得中...")
-        self._run_search_in_thread(query, search_widget)
-
-    @work(thread=True, exclusive=True, group="ai_execution")
-    def _run_search_in_thread(
-        self,
-        query: str,
-        search_widget: SearchTurnWidget,
-    ) -> None:
-        try:
-            outcome = self.controller.run_search(query)
-            self.call_from_thread(
-                self._finalize_search_on_main,
-                search_widget,
-                outcome,
-            )
-        except Exception as err:
-            self.call_from_thread(
-                self._handle_search_exception_on_main,
-                search_widget,
-                err,
-            )
-
-    def _finalize_search_on_main(
-        self,
-        search_widget: SearchTurnWidget,
-        outcome: SearchOutcome,
-    ) -> None:
-        search_widget.set_outcome(outcome)
-        self.activity_bar.stop_busy()
-        self.refresh_status()
-        self.timeline.follow_if_near_bottom()
-
-    def _handle_search_exception_on_main(
-        self,
-        search_widget: SearchTurnWidget,
-        error: Exception,
-    ) -> None:
-        from gemio.core.search import SearchResult
-
-        fallback = SearchOutcome(
-            result=SearchResult(
-                query=search_widget.query,
-                response_text=f"Web検索中に予期せぬエラーが発生しました: {error}",
-                sources=[],
-                created_at=get_now_time_text(),
-                succeeded=False,
-            ),
-            material_status="failed",
-            total_materials=len(self.controller.chat_session.materials),
-        )
-        search_widget.set_outcome(fallback)
-        self.activity_bar.stop_busy()
-        self.refresh_status()
-        self.timeline.follow_if_near_bottom()
 
     def _start_compact_worker(self, keep_recent_turns: int) -> None:
         if self.controller.is_busy:
@@ -772,6 +688,26 @@ class GemioApp(App[int]):
         """ヘルプモーダルを開きます。"""
         self.push_screen(HelpModal())
 
+    def action_show_materials(self) -> None:
+        """作業前提資料管理モーダルを開きます。"""
+        if self.controller.is_busy:
+            self.notify("AI処理中は資料管理を開けません。", severity="warning")
+            return
+        self.push_screen(
+            MaterialsModal(
+                list_callback=self.controller.list_materials,
+                add_callback=self.controller.add_user_material,
+                remove_callback=self.controller.remove_material,
+                clear_callback=self.controller.clear_materials,
+                forbidden_paths=self.controller.get_forbidden_paths_for_diagnosis(),
+            ),
+            callback=self._on_materials_modal_closed,
+        )
+
+    def _on_materials_modal_closed(self, _changed: bool | None) -> None:
+        self.refresh_status()
+        self.composer.focus_editor()
+
     def action_select_model(self) -> None:
         """モデル選択モーダルを開きます。"""
         self.push_screen(
@@ -802,6 +738,9 @@ class GemioApp(App[int]):
         )
 
     def _on_token_modal_closed(self, action: str | None) -> None:
+        if action == "materials":
+            self.action_show_materials()
+            return
         if action == "clear":
             self._execute_clear_session(clear_materials=False)
         elif action == "clear_all":

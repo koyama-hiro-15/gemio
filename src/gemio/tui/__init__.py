@@ -11,10 +11,12 @@ from gemio.tui.screens import (
     AskUserModal,
     HelpModal,
     IterationLimitModal,
+    MaterialsModal,
     ModelSelectModal,
     SandboxStatusModal,
     TokenUsageModal,
     TrustConsentModal,
+    UserSearchModal,
 )
 
 __all__ = [
@@ -26,9 +28,11 @@ __all__ = [
     "HelpModal",
     "IterationLimitModal",
     "MODAL_ABORT_SENTINEL",
+    "MaterialsModal",
     "ModelSelectModal",
     "SandboxStatusModal",
     "ThreadModalBridge",
     "TokenUsageModal",
     "TrustConsentModal",
+    "UserSearchModal",
 ]

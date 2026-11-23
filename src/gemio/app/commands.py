@@ -6,7 +6,7 @@ UI フレームワークに依存せず、入力文字列を型付きのコマ�
 """
 
 from dataclasses import dataclass
-from typing import Union
+from typing import Literal, Union
 
 
 @dataclass(frozen=True)
@@ -65,14 +65,18 @@ class ModelCommand:
 
 
 @dataclass(frozen=True)
-class SearchCommand:
-    """Web検索・AI検索ツール切替・作業前提資料操作コマンド (/search, /s)。"""
+class WebModeCommand:
+    """AIによる外部検索支援ツール (+WEB / -WEB) 切替コマンド (/web [on|off])。"""
 
-    query: str = ""
-    toggle_enabled: bool | None = None
-    save_last: bool = False
-    clear_materials: bool = False
-    show_help: bool = False
+    enable: bool | None = None
+
+
+@dataclass(frozen=True)
+class MaterialsCommand:
+    """作業前提資料管理コマンド (/materials [clear | rm <id>])。"""
+
+    action: Literal["open", "clear", "remove"] = "open"
+    target: str = ""
 
 
 @dataclass(frozen=True)
@@ -104,7 +108,8 @@ ParsedInput = Union[
     EditModeCommand,
     TrustModeCommand,
     ModelCommand,
-    SearchCommand,
+    WebModeCommand,
+    MaterialsCommand,
     CopyCommand,
     CompactCommand,
     RewindCommand,
@@ -166,29 +171,26 @@ def parse_slash_command(raw_input: str) -> ParsedInput | None:
             return ModelCommand(target_model=parts[1].strip())
         return ModelCommand(target_model=None)
 
-    if lower in {"/search", "/s"} or lower.startswith(("/search ", "/s ")):
-        if lower in {"/search", "/s"}:
-            return SearchCommand(show_help=True)
+    if lower == "/web" or lower.startswith("/web "):
+        parts = lower.split()
+        enable = _parse_optional_bool_flag(parts[1]) if len(parts) > 1 else None
+        return WebModeCommand(enable=enable)
 
-        raw_query = (
-            stripped[8:].strip()
-            if lower.startswith("/search ")
-            else stripped[3:].strip()
-        )
-        raw_query_lower = raw_query.lower()
-
-        if not raw_query:
-            return SearchCommand(show_help=True)
-        if raw_query_lower in {"on", "enable", "true"}:
-            return SearchCommand(toggle_enabled=True)
-        if raw_query_lower in {"off", "disable", "false"}:
-            return SearchCommand(toggle_enabled=False)
-        if raw_query_lower in {"-s", "--save"}:
-            return SearchCommand(save_last=True)
-        if raw_query_lower in {"-c", "--clear"}:
-            return SearchCommand(clear_materials=True)
-
-        return SearchCommand(query=raw_query)
+    if lower in {"/materials", "/mat", "/mats"} or lower.startswith(
+        ("/materials ", "/mat ", "/mats ")
+    ):
+        parts = stripped.split(maxsplit=2)
+        if len(parts) == 1:
+            return MaterialsCommand(action="open")
+        sub = parts[1].strip().lower()
+        if sub in {"clear", "-c", "--clear"}:
+            return MaterialsCommand(action="clear")
+        if sub in {"rm", "remove", "del", "delete"}:
+            target = parts[2].strip() if len(parts) > 2 else ""
+            if target:
+                return MaterialsCommand(action="remove", target=target)
+            return MaterialsCommand(action="open")
+        return MaterialsCommand(action="open")
 
     if lower in {"/copy", "/cp"}:
         return CopyCommand()
@@ -218,12 +220,13 @@ __all__ = [
     "EditModeCommand",
     "ExitCommand",
     "HelpCommand",
+    "MaterialsCommand",
     "ModelCommand",
     "ParsedInput",
     "RewindCommand",
     "SandboxCommand",
-    "SearchCommand",
     "TokensCommand",
     "TrustModeCommand",
+    "WebModeCommand",
     "parse_slash_command",
 ]

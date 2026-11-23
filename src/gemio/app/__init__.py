@@ -4,7 +4,11 @@ Gemio アプリケーション制御層（gemio.app）公開ファサード。
 UI フレームワーク（Textual 等）に依存しないセッション統括・コマンド解析・状態モデルを提供します。
 """
 
-from gemio.app.callbacks import InteractionHandler
+from gemio.app.callbacks import (
+    InteractionHandler,
+    UserSearchReply,
+    UserSearchRequest,
+)
 from gemio.app.commands import (
     ChatPromptInput,
     ClearCommand,
@@ -13,13 +17,14 @@ from gemio.app.commands import (
     EditModeCommand,
     ExitCommand,
     HelpCommand,
+    MaterialsCommand,
     ModelCommand,
     ParsedInput,
     RewindCommand,
     SandboxCommand,
-    SearchCommand,
     TokensCommand,
     TrustModeCommand,
+    WebModeCommand,
     parse_slash_command,
 )
 from gemio.app.config import (
@@ -37,8 +42,6 @@ from gemio.app.prompts import (
 )
 from gemio.app.state import (
     ContextHealth,
-    MaterialStatus,
-    SearchOutcome,
     SessionSnapshot,
 )
 
@@ -60,16 +63,17 @@ __all__ = [
     "GemioController",
     "HelpCommand",
     "InteractionHandler",
-    "MaterialStatus",
+    "MaterialsCommand",
     "ModelCommand",
     "ParsedInput",
     "RewindCommand",
     "SandboxCommand",
-    "SearchCommand",
-    "SearchOutcome",
     "SessionSnapshot",
     "TokensCommand",
     "TrustModeCommand",
+    "UserSearchReply",
+    "UserSearchRequest",
+    "WebModeCommand",
     "parse_slash_command",
     "validate_project_dir",
 ]

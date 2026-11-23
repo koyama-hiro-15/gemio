@@ -13,13 +13,11 @@ from gemio.core.models import (
     CONTEXT_TOKEN_DANGER_THRESHOLD,
     CONTEXT_TOKEN_WARNING_THRESHOLD,
 )
-from gemio.core.search import SearchResult
 from gemio.project import (
     APPROVAL_MODE_EDIT,
     APPROVAL_MODE_TRUST,
 )
 
-MaterialStatus = Literal["unretained", "added", "duplicate", "failed", "aborted"]
 ContextHealth = Literal["normal", "warning", "danger"]
 
 
@@ -92,31 +90,16 @@ class SessionSnapshot:
 
     @property
     def web_badge_text(self) -> str:
-        """ステータスバー向けのAI Web検索有効/無効バッジ表記（+WEB / -WEB）を返します。"""
+        """ステータスバー向けの外部検索支援ツール有効/無効バッジ表記（+WEB / -WEB）を返します。"""
         return "+WEB" if self.web_search_enabled else "-WEB"
 
     @property
     def web_display_label(self) -> str:
-        """案内画面向けの日本語Web検索状態表記を返します。"""
-        return "Web検索: ON (都度確認)" if self.web_search_enabled else "Web検索: OFF"
-
-
-@dataclass(frozen=True)
-class SearchOutcome:
-    """
-    Web検索実行および作業前提資料ストアへの反映結果を表すデータクラス。
-
-    material_status により「未保持(単発検索)」「新規追加」「重複スキップ」「通信失敗」「ユーザー中断」を厳密に区別します。
-    """
-
-    result: SearchResult
-    material_status: MaterialStatus
-    total_materials: int
+        """案内画面向けの日本語検索支援状態表記を返します。"""
+        return "Web検索支援: ON" if self.web_search_enabled else "Web検索支援: OFF"
 
 
 __all__ = [
     "ContextHealth",
-    "MaterialStatus",
-    "SearchOutcome",
     "SessionSnapshot",
 ]

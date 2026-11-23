@@ -152,18 +152,16 @@ def test_material_store_no_local_paths_hash_management_and_display_format():
     assert "mtime" not in field_names
 
     store = MaterialStore()
-    redirect_url = "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AQqDxyz123=="
-    m1, added1 = store.add_search_result(
-        query="Python 3.15 新機能",
-        response_text="PEP 810 の解説本文",
-        sources=[{"title": "PEP 810 | peps.python.org", "url": redirect_url}],
+    m1, st_m1 = store.add_user_document(
+        title="Python 3.15 新機能",
+        content="PEP 810 の解説本文",
         created_at="10:00:00",
     )
-    assert added1 is True and m1.kind == MaterialKind.WEB_SEARCH
+    assert st_m1 == "added" and m1.kind == MaterialKind.USER_DOCUMENT
 
     # 同一内容の重複追加防止
-    m1_dup, added_dup = store.add_search_result("別クエリ", "  PEP 810 の解説本文  ", [])
-    assert added_dup is False and m1_dup.material_id == m1.material_id
+    m1_dup, st_dup_m1 = store.add_user_document("別タイトル", "  PEP 810 の解説本文  ")
+    assert st_dup_m1 == "duplicate" and m1_dup.material_id == m1.material_id
 
     # ユーザー資料の追加・重複防止・source_hash 更新
     opaque_source_hash = compute_sha256("logical_doc_identifier_1")
@@ -192,13 +190,11 @@ def test_material_store_no_local_paths_hash_management_and_display_format():
     # プロンプト用およびユーザー再表示用フォーマット検証
     formatted_prompt = store.format_for_prompt()
     assert "【作業前提資料】" in formatted_prompt
-    assert "vertexaisearch" not in formatted_prompt
     assert opaque_source_hash not in formatted_prompt
 
     formatted_disp = store.format_for_display()
-    assert "[Web検索] Python 3.15 新機能" in formatted_disp
+    assert "[ユーザー資料] Python 3.15 新機能" in formatted_disp
     assert "[ユーザー資料] アーキテクチャ仕様メモ" in formatted_disp
-    assert "vertexaisearch" not in formatted_disp
 
     # 個別削除
     assert store.remove("1").material_id == m1.material_id
@@ -306,6 +302,26 @@ def test_chat_session_injects_materials_without_polluting_history():
     assert summary_keep["cleared_messages"] == 2
     assert summary_keep["retained_materials"] == 1
 
+    # 同一ターンのツール呼び出しループ途中で資料を追加した場合、直後のリクエスト先頭に即反映されること
+    pending_loop = [
+        types.Content(role="user", parts=[types.Part.from_text(text="最新仕様で実装して")]),
+        types.Content(
+            role="model",
+            parts=[types.Part.from_function_call(name="request_user_search", args={"purpose": "確認"})],
+        ),
+        types.Content(
+            role="user",
+            parts=[types.Part.from_function_response(name="request_user_search", response={"result": "登録完了"})],
+        ),
+    ]
+    session.materials.add_user_document(title="追加API仕様", content="v2 の新シグネチャ")
+    loop_contents = session.build_request_contents(pending_contents=pending_loop)
+    assert len(loop_contents) == 3
+    assert "追加API仕様" in loop_contents[0].parts[0].text
+    assert "v2 の新シグネチャ" in loop_contents[0].parts[0].text
+    assert "【ユーザーの指示】\n最新仕様で実装して" in loop_contents[0].parts[0].text
+    assert loop_contents[2].parts[0].function_response.name == "request_user_search"
+
     summary_clear = session.reset(clear_materials=True, token_tracker=tracker)
-    assert summary_clear["cleared_materials"] == 1
+    assert summary_clear["cleared_materials"] == 2
     assert len(session.materials) == 0

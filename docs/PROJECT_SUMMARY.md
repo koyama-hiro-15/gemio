@@ -451,3 +451,10 @@
     - `StatusHeader` の承認バッジ右隣にクリックで切り替え可能な `+WEB`（強調色） / `-WEB`（太字解除・減光グレー `.badge-web-off`）バッジを配置し、`SearchTurnWidget` に `[+ 資料に追加]` ボタンとフォーカス自動復帰を実装。
     - バージョンを **`v0.3.0`** に更新（`pyproject.toml`, `src/gemio/__init__.py`, `CHANGELOG.md`, `README.md`, `manuals/07_ARCHITECTURE_REFERENCE.md`）。
     - 全12テストモジュール・88件の単体・統合・ヘッドレスTUIテスト合格を確認し、`#016`・`#001`・`#002`・`docs/README.md`・`manuals/01,02,03,05,07,08,09`・`README.md` を同期更新。
+- **2026年11月24日**: Google Search Grounding 廃止および人間介在型 Web 検索支援（Human-Assisted Web Search）・作業前提資料管理の実装（設計書 `#017` / 議事録 `docs/tech_docs/web_search_design_minutes.md`）
+  - **Core 層の刷新 (`src/gemio/core/search.py`, `prompts.py`, `context/materials.py`)**:
+    - 正式リリースに向けた利用規約適合性レビューの結果、Google Search Grounding（`SearchAgent`・`DEFAULT_SEARCH_INSTRUCTION`・`MaterialKind.WEB_SEARCH`・`SearchTurnWidget`・`/search`）を廃止。
+    - 新規に貼り付け入力テキスト診断 `diagnose_user_pasted_text()`（APIキー/秘密鍵等の機密混入ブロック、ローカルパス注意喚起、不可視文字・チャット制御トークン検知、IPI疑い/HTML/サイズ警告）、無害化 `sanitize_pasted_text()`、Spotlighting 境界整形 `format_user_search_response()` を実装。
+  - **App / TUI 層の刷新 (`src/gemio/app/`, `src/gemio/tui/`)**:
+    - `request_user_search` ツールを結線し、AI提案クエリのプリフライト検査後に専用モーダル `UserSearchModal`（推奨クエリごとの `[Copy]` / ホスト環境限定 Google検索 `[Open]`、複数行 `TextArea`、リアルタイム入力テキスト診断、`[通常応答で送信]` vs `[前提資料に追加し送信]` 選択）を表示するフローを実装（`TRUST` モード維持、前提資料登録時は二重送信を避け同ターン次イテレーションへ即反映）。
+    - コマンドを `/web [on|off]`（`+WEB` / `-WEB` 切替）と `/materials [clear | rm <id>]`（管理モーダル `MaterialsModal` 開覧・手動追加・削除）へ再編し、`TokenUsageModal` からの資料管理導線および全91件の単体・ヘッドレスTUIテスト合格を確認。

@@ -2,7 +2,7 @@
 
 **作成日:** 2026年11月24日  
 **最終更新日:** 2026年11月24日  
-**ステータス:** 設計完了（実装準備中）  
+**ステータス:** 実装完了（現行）  
 **対象システム:** `src/gemio/core/` (`search.py`, `prompts.py`, `context/materials.py`), `src/gemio/app/` (`commands.py`, `callbacks.py`, `controller.py`, `prompts.py`, `state.py`), `src/gemio/tui/` (`app.py`, `commands_palette.py`, `messages.py`, `styles/app.tcss`, `screens/user_search.py`, `screens/materials.py`, `screens/help.py`, `screens/tokens.py`, `widgets/header.py`, `widgets/welcome.py`), `tests/`  
 
 ### 【要約】
@@ -307,3 +307,4 @@ class UserSearchReply:
 | 日付 | 更新者 | ステータス | 変更内容の要約 |
 | :--- | :--- | :--- | :--- |
 | 2026-11-24 | AI Agent | 設計完了（実装準備中） | 初版作成。Google Search Grounding を廃止し、人間介在型 Web 検索支援（`UserSearchModal`、リアルタイム入力テキスト診断、`/web`・`/materials` 再編、通常応答/前提資料選択）の設計を策定。 |
+| 2026-11-24 | AI Agent | 実装完了（現行） | Core / App / TUI の全レイヤー実装、全91件の単体・ヘッドレスTUIテスト合格、および関連ドキュメント更新を完了。 |

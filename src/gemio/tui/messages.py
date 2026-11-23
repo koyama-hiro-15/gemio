@@ -2,7 +2,7 @@
 Gemio Textual UI 内部で使用するカスタム Message 定義モジュール。
 """
 
-from typing import Any, Literal
+from typing import Literal
 
 from textual.message import Message
 
@@ -34,15 +34,6 @@ class CopyTextRequested(Message):
         self.label = label
 
 
-class SaveSearchMaterialRequested(Message):
-    """SearchTurnWidget から単発検索結果を作業前提資料へ追加するよう要求された際のメッセージ。"""
-
-    def __init__(self, card: Any, result: Any) -> None:
-        super().__init__()
-        self.card = card
-        self.result = result
-
-
 class CancelTurnRequested(Message):
     """ActivityBar 等から現在実行中のAIターンの中断が要求された際のメッセージ。"""
 
@@ -53,5 +44,4 @@ __all__ = [
     "HeaderBadgeClicked",
     "HeaderBadgeTarget",
     "PromptSubmitted",
-    "SaveSearchMaterialRequested",
 ]

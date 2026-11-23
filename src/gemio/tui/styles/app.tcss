@@ -178,28 +178,6 @@ UserMessageCard {
     margin-right: 1;
 }
 
-.save-mat-btn {
-    width: auto;
-    min-width: 10;
-    height: 1;
-    border: none;
-    padding: 0 1;
-    margin-right: 1;
-    background: $primary;
-    color: $text;
-}
-
-.save-mat-btn:hover, .save-mat-btn:focus {
-    background: $success;
-    color: $surface;
-    text-style: bold;
-}
-
-.save-mat-btn:disabled {
-    background: $surface-lighten-1;
-    color: $text-muted;
-}
-
 .copy-btn {
     width: auto;
     min-width: 6;
@@ -276,48 +254,155 @@ AssistantMessageCard Markdown {
     padding: 0;
 }
 
-/* SearchTurnWidget (/search カード) */
-SearchTurnWidget {
+/* UserSearchModal / MaterialsModal 専用レイアウト (80x24 対応) */
+UserSearchModal,
+MaterialsModal {
+    align: center middle;
+    background: $background 60%;
+}
+
+.user-search-dialog,
+.materials-dialog {
+    height: 92%;
+    max-height: 36;
+    padding: 0 2;
+}
+
+.user-search-guide {
     width: 100%;
     height: auto;
-    border: round $primary;
-    background: $surface-darken-1;
+    max-height: 7;
+    background: $surface;
+    border: solid $primary-darken-2;
     padding: 0 1;
-    margin-bottom: 1;
 }
 
-SearchTurnWidget.search-failed {
-    border: round $error;
-}
-
-.search-query-body {
+.user-search-meta {
     width: 100%;
     height: auto;
-    color: $text;
-    background: $panel;
-    padding: 0 1;
-    margin-bottom: 1;
 }
 
-SearchTurnWidget Markdown {
-    width: 100%;
-    height: auto;
-    margin: 0;
-    padding: 0;
-}
-
-.search-sources {
+.user-search-label {
     width: 100%;
     height: auto;
     color: $accent;
-    margin-top: 1;
+    text-style: bold;
 }
 
-.search-material-footer {
+.user-search-query-row {
+    width: 100%;
+    height: auto;
+    align: left middle;
+}
+
+.user-search-query-text {
+    width: 1fr;
+    height: auto;
+    color: $text;
+}
+
+.query-op-btn {
+    width: auto;
+    min-width: 6;
+    height: 1;
+    border: none;
+    padding: 0 1;
+    margin-left: 1;
+    background: $primary;
+    color: $text;
+}
+
+.query-op-btn:hover, .query-op-btn:focus {
+    background: $accent;
+    color: $surface;
+    text-style: bold;
+}
+
+.user-search-title-preview {
     width: 100%;
     height: auto;
     color: $text-muted;
-    margin-top: 1;
+    padding: 0;
+}
+
+.user-search-textarea {
+    width: 100%;
+    height: 1fr;
+    min-height: 4;
+    border: tall $primary-darken-1;
+    background: $surface;
+}
+
+.user-search-textarea:focus {
+    border: tall $accent;
+}
+
+.user-search-diag-row {
+    width: 100%;
+    height: auto;
+    align: left middle;
+}
+
+.user-search-diagnosis {
+    width: 1fr;
+    height: auto;
+}
+
+.user-search-aux-btn {
+    width: auto;
+    min-width: 8;
+    height: 1;
+    border: none;
+    padding: 0 1;
+    margin-left: 1;
+}
+
+#materials-tabs {
+    width: 100%;
+    height: 1fr;
+}
+
+#materials-tabs > ContentSwitcher {
+    width: 100%;
+    height: 1fr;
+}
+
+#materials-tabs TabPane {
+    width: 100%;
+    height: 1fr;
+    padding: 0;
+}
+
+.materials-table {
+    width: 100%;
+    height: auto;
+    max-height: 8;
+}
+
+.materials-preview-scroll {
+    width: 100%;
+    height: 1fr;
+    background: $surface;
+    border: solid $primary-darken-2;
+    padding: 0 1;
+}
+
+.materials-list-actions {
+    width: 100%;
+    height: auto;
+    align: left middle;
+}
+
+.materials-list-actions Button {
+    margin-right: 1;
+}
+
+.materials-add-textarea {
+    width: 100%;
+    height: 1fr;
+    min-height: 4;
+    border: tall $primary-darken-1;
+    background: $surface;
 }
 
 /* 3. ActivityBar & PromptComposer (下部固定入力エリア) */

@@ -1,7 +1,7 @@
 # 🏗️ Gemio アーキテクチャ & 内部仕様リファレンスマニュアル
 
 **作成日:** 2026年11月14日  
-**最終更新日:** 2026年11月23日  
+**最終更新日:** 2026年11月24日  
 **ステータス:** 運用中  
 **対象システム:** Gemio 全パッケージ (`src/gemio/core/`, `src/gemio/project/`, `src/gemio/app/`, `src/gemio/tui/`, `src/gemio/cli/`, `src/gemio/__init__.py`)  
 
@@ -22,7 +22,7 @@
 3. [`gemio.core` パッケージ詳細仕様](#3-gemiocore-パッケージ詳細仕様)
    - [3.1 基盤・通信・トークン計測 (`exceptions.py`, `models.py`, `client.py`)](#31-基盤通信トークン計測-exceptionspy-modelspy-clientpy)
    - [3.2 コンテキスト・セッション管理 (`core/context/`)](#32-コンテキストセッション管理-corecontext)
-   - [3.3 実行エンジン (`agent.py` vs `search.py` の完全分離)](#33-実行エンジン-agentpy-vs-searchpy-の完全分離)
+   - [3.3 実行エンジン (`agent.py`) と検索支援診断 (`search.py`)](#33-実行エンジン-agentpy-と検索支援診断-searchpy)
    - [3.4 プロンプト合成・Skills・ツール管理 (`prompts.py`, `skills/`, `tools/`)](#34-プロンプト合成skillsツール管理-promptspy-skills-tools)
 4. [`gemio.project` パッケージ詳細仕様](#4-gemioproject-パッケージ詳細仕様)
    - [4.1 `Project`（ファイル境界保護・BFS探索・3段階承認・サーキットブレーカー）](#41-projectファイル境界保護bfs探索3段階承認サーキットブレーカー)
@@ -34,7 +34,7 @@
 6. [主要処理のシーケンス・データフロー](#6-主要処理のシーケンスデータフロー)
    - [6.1 起動・初期化・サンドボックス検証フロー](#61-起動初期化サンドボックス検証フロー)
    - [6.2 通常対話・Function Calling・承認/Abort・`ChatTurn` 確定フロー](#62-通常対話function-calling承認abortchatturn-確定フロー)
-   - [6.3 `/search` Web検索〜`MaterialStore` 蓄積〜プロンプト先頭インジェクションフロー](#63-search-web検索materialstore-蓄積プロンプト先頭インジェクションフロー)
+   - [6.3 `request_user_search` / `/materials` 〜`MaterialStore` 蓄積〜同ターン即反映フロー](#63-request_user_search--materials-materialstore-蓄積同ターン即反映フロー)
 7. [Pythonライブラリとしての公開APIリファレンス](#7-pythonライブラリとしての公開apiリファレンス)
    - [7.1 `gemio` トップレベル公開シンボル一覧](#71-gemio-トップレベル公開シンボル一覧)
    - [7.2 ライブラリ組み込み最小サンプルコード](#72-ライブラリ組み込み最小サンプルコード)
@@ -77,7 +77,7 @@ Gemioは標準の `src` レイアウト（`src/gemio/`）を採用し、責務�
 │ 1. コアエンジン・コンテキスト層 (gemio.core)                         │
 │    ・API通信/リトライ/トークン集計 (GenAIClient, TokenUsageTracker)  │
 │    ・ターン履歴/作業前提資料/要約圧縮 (context/)                     │
-│    ・通常対話エンジン (ChatAgent) / Web検索エンジン (SearchAgent)    │
+│    ・通常対話エンジン (ChatAgent) / 検索支援・入力診断 (core/search.py)│
 │    ・動的プロンプト合成、Skills、ツールレジストリ (prompts, skills,  │
 │      tools)                                                          │
 └──────────────────────────────────────────────────────────────────────┘
@@ -100,21 +100,21 @@ Gemioは標準の `src` レイアウト（`src/gemio/`）を採用し、責務�
                        │   cli/main.py ➔ GemioApp (tui) ➔ GemioController │
                        │      └── ThreadModalBridge (Worker ⇄ ModalScreen)│
                        └──┬────────────────────┬───────────────────────┬──┘
-       [コールバック注入] │                    │通常プロンプト         │Web検索 (/search)
-  ・approval_callback     │                    │                       │
-  ・ask_user_callback     │                    │                       │
-                          ▼                    ▼                       ▼
+       [コールバック注入] │                    │通常プロンプト         │検索支援・資料管理
+  ・approval_callback     │                    │                       │(UserSearchModal /
+  ・ask_user_callback     │                    │                       │ MaterialsModal)
+  ・request_user_search   ▼                    ▼                       ▼
 ┌───────────────────────────────────┐   ┌─────────────┐         ┌─────────────┐
-│  Project / DeveloperProject       │   │  ChatAgent  │         │ SearchAgent │
-│  ・ファイル操作ツール群           │   └──────┬──────┘         └──────┬──────┘
-│  ・run_sandbox_command (--dev)    │          │                       │SearchResult返却
-│  ・3段階承認 & サーキットブレーカ │          │参照・記録             │(成功時のみCLIが登録)
+│  Project / DeveloperProject       │   │  ChatAgent  │         │ core/search │
+│  ・ファイル操作ツール群           │   └──────┬──────┘         │ 静的診断・  │
+│  ・run_sandbox_command (--dev)    │          │                │ 無害化・整形│
+│  ・3段階承認 & サーキットブレーカ │          │参照・記録      └──────┬──────┘
 └─────────────────┬─────────────────┘          ▼                       │
                   │Toolset登録      ┌────────────────────────┐         │
                   │                 │      ChatSession       │◄────────┘
-                  │                 │  ├── ChatHistory       │  (※SearchAgent自体は
-                  │                 │  │   (ChatTurn列+要約) │   ChatSessionへの参照を
-                  │                 │  └── MaterialStore     │   一切持たない完全隔離構造)
+                  │                 │  ├── ChatHistory       │  (ユーザー選択時のみ
+                  │                 │  │   (ChatTurn列+要約) │   USER_DOCUMENT 登録)
+                  │                 │  └── MaterialStore     │
                   │                 │      (SHA-256管理)     │
                   ▼                 └──────────▲─────────────┘
          ┌────────────────────────┐            │要約圧縮 (基盤API)
@@ -128,7 +128,7 @@ Gemioは標準の `src` レイアウト（`src/gemio/`）を採用し、責務�
                   ▼                            ▼
          ┌────────────────────────────────────────────────────────────────┐
          │       GenAIClient (API通信・指数バックオフリトライ)            │
-         │         └── TokenUsageTracker (chat / search / compaction 集計)│
+         │         └── TokenUsageTracker (chat / compaction 集計)         │
          └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -138,12 +138,12 @@ Gemioは標準の `src` レイアウト（`src/gemio/`）を採用し、責務�
 
 1. **ホストOSシェル直接実行の100%禁止**:
    基本モード（`Project`）はサブプロセス実行機能を一切持たず、開発者モード（`DeveloperProject`）も安全なLinuxコンテナ内（`in_container`）または稼働中Dockerコンテナへの `docker exec` 委譲（`host_docker`）が確認できない限り `SandboxSecurityError` で起動を拒否します。
-2. **ローカル環境情報（物理パス・OS例外・暗号化URL）のプロンプト非露出**:
-   `ReferenceMaterial`、`SkillSpec`、`ToolSpec` はホストOSの物理ファイルパス属性を一切保持しません。エラーメッセージからも物理パスを除去し、Web検索の参照元からも長大な暗号化リダイレクトURL（`vertexaisearch...`）を除外してトークン浪費と環境露出を防止します。
-3. **Web検索コンテキストの完全隔離**:
-   `SearchAgent` はローカルの対話履歴（`ChatHistory`）、作業前提資料（`MaterialStore`）、およびファイル操作ツールへの参照を一切持たず、作業中のソースコードや機密情報が検索クエリ経由で外部送信される経路を構造的に遮断しています。
+2. **ローカル環境情報（物理パス・OS例外）のプロンプト非露出**:
+   `ReferenceMaterial`、`SkillSpec`、`ToolSpec` はホストOSの物理ファイルパス属性を一切保持しません。エラーメッセージからも物理パスを除去し、AIが提示する検索クエリにもローカルパス・機密混入がないか `validate_search_query_safety()` で遮断します。
+3. **人間介在型 Web 検索支援と入力テキスト診断**:
+   Gemio 自体は外部検索APIやGoogle検索グラウンディングを呼び出さず、推奨検索クエリを専用ダイアログ（`UserSearchModal`）で提示し、ユーザー自身がブラウザで調査・選別して貼り付けます。貼り付けテキストは `diagnose_user_pasted_text()` により機密誤ペーストをブロックし、Spotlighting 境界を付与して渡します。
 4. **AI操作権限と人間専用操作権限の厳格な分離**:
-   AIツールから `MaterialStore` を直接書き換える手段は提供せず、Web検索結果以外の資料追加・削除はユーザー操作専用としています。また、`.env` 等の機密領域、`.git/`、既存 `.devcontainer/`、`.gemio/`、`*.egg-info/` は承認モードを問わずAIからの変更をハードブロックします。
+   AIツールから `MaterialStore` を直接書き換える手段は提供せず、資料追加（検索ダイアログでの「前提資料に追加」選択または `/materials`）・個別削除・クリアはすべてユーザー操作専用としています。また、`.env` 等の機密領域、`.git/`、既存 `.devcontainer/`、`.gemio/`、`*.egg-info/` は承認モードを問わずAIからの変更をハードブロックします。
 
 ---
 
@@ -169,7 +169,7 @@ gemio/
 │   │   ├── client.py                    # GenAIClient & TokenUsageTracker
 │   │   ├── prompts.py                   # システムプロンプト定数 & SystemPromptComposer
 │   │   ├── agent.py                     # ChatAgent (通常対話 & Function Calling ループ)
-│   │   ├── search.py                    # SearchAgent (Google Search Grounding 専用)
+│   │   ├── search.py                    # クエリ安全検査・貼り付け入力診断・無害化・境界整形
 │   │   ├── context/                     # コンテキスト・前提資料管理サブパッケージ
 │   │   │   ├── __init__.py
 │   │   │   ├── history.py               # ChatTurn & ChatHistory (ターン単位履歴・rewind・抽出)
@@ -195,9 +195,9 @@ gemio/
 │   ├── app/                             # 【アプリケーション制御層】※UI非依存
 │   │   ├── __init__.py
 │   │   ├── config.py                    # AppConfig, AppStartupError, validate_project_dir
-│   │   ├── state.py                     # SessionSnapshot, SearchOutcome (不変状態モデル)
-│   │   ├── callbacks.py                 # InteractionHandler プロトコル
-│   │   ├── commands.py                  # parse_slash_command & 構造化コマンド群
+│   │   ├── state.py                     # SessionSnapshot (不変状態スナップショット)
+│   │   ├── callbacks.py                 # InteractionHandler プロトコル / UserSearchRequest・Reply
+│   │   ├── commands.py                  # parse_slash_command & 構造化コマンド群 (/web, /materials 等)
 │   │   ├── prompts.py                   # build_web_search_instruction (+WEB/-WEB 動的ルール)
 │   │   └── controller.py                # GemioController (全コンポーネント結線・中断制御・操作API)
 │   ├── tui/                             # 【Textual UI層】
@@ -207,7 +207,7 @@ gemio/
 │   │   ├── commands_palette.py          # GemioCommandProvider (Ctrl+P コマンドパレット統合)
 │   │   ├── messages.py                  # カスタム Message 定義
 │   │   ├── styles/app.tcss              # Textual CSS スタイルシート (256色・80x24互換)
-│   │   ├── screens/                     # 全9種 ModalScreen (approval, ask_user, sandbox, tokens 等)
+│   │   ├── screens/                     # 全11種 ModalScreen (user_search, materials, approval 等)
 │   │   └── widgets/                     # 4ゾーン・タイムライン用 Widget (header, turn, composer 等)
 │   └── cli/                             # 【CLIブートストラップ層】
 │       ├── __init__.py
@@ -226,7 +226,7 @@ gemio/
 | **Core** | `core/client.py` | `GenAIClient`, `TokenUsageTracker` | `google-genai` クライアント管理、動的モデルカタログ・スペックキャッシュ、指数バックオフリトライ、ソース別トークン集計 |
 | **Core** | `core/prompts.py` | `SystemPromptComposer`, `DEFAULT_SYSTEM_INSTRUCTION` | 汎用基本ルール・追加ルールセクション・動的ツールカタログ・Skills手順の動的合成 |
 | **Core** | `core/agent.py` | `ChatAgent`, `ChatTurnResult`, `emit_agent_log` | 通常対話・Function Callingループ、エラー回復、上限継続確認、`cancel_event` 安全中断、ターン記録 |
-| **Core** | `core/search.py` | `SearchAgent`, `SearchResult`, `validate_search_query_safety` | ステートレス隔離コンテキストでのGoogle Search Grounding実行、プリフライト機密・パス検査、リダイレクトURL除去整形、`cancel_event` 中断 |
+| **Core** | `core/search.py` | `validate_search_query_safety`, `diagnose_user_pasted_text`, `sanitize_pasted_text`, `format_user_search_response` | 推奨検索クエリの機密・パス検査、貼り付けテキスト診断（機密ブロック・パス注意・不可視文字/IPI/サイズ警告）、無害化、Spotlighting整形 |
 | **Core** | `core/context/history.py` | `ChatTurn`, `ChatHistory` | ターン単位の対話履歴保持、安全な `rewind()`、Markdown抽出、要約展開 |
 | **Core** | `core/context/materials.py` | `MaterialStore`, `ReferenceMaterial`, `MaterialKind` | パス非保持・SHA-256ハッシュによる前提資料の蓄積・重複防止・プロンプト整形 |
 | **Core** | `core/context/compactor.py` | `ContextCompactor`, `CompactionResult` | 古い `ChatTurn` 群をLLMで4項目構造化サマリへ要約圧縮 |
@@ -240,11 +240,11 @@ gemio/
 | **Project** | `project/prompts.py` | `PROJECT_SYSTEM_INSTRUCTION`, `DEVELOPER_PROJECT_INSTRUCTION` | `Project` および `DeveloperProject` 固有のツール・承認・探索・サンドボックス規約定数 |
 | **Project** | `project/base.py` | `Project`, `summarize_text_for_display` | パス境界・機密保護、ファイル操作・BFS探索ツール、3段階承認、サーキットブレーカー、`ask_user` |
 | **Project** | `project/developer.py` | `DeveloperProject`, `SandboxSecurityError`, `scrub_environment` | コンテナ判定、脱獄構成ブロック、環境変数スクラブ、`/sandbox` 診断、`run_sandbox_command` |
-| **App** | `app/config.py`, `state.py` | `AppConfig`, `SessionSnapshot`, `SearchOutcome` | 起動設定正規化、パス検証、UI非依存の不変状態スナップショット（`+WEB`/`-WEB`含む）、検索反映5状態モデル |
-| **App** | `app/commands.py`, `prompts.py` | `parse_slash_command`, `build_web_search_instruction` | 全スラッシュコマンドの構造化パース、`+WEB`/`-WEB` 状態に応じたWeb検索ルール生成 |
-| **App** | `app/controller.py`, `callbacks.py` | `GemioController`, `InteractionHandler` | コンポーネント結線、APIキー遅延設定、型付き操作API、`cancel_active_execution` によるターン中断 |
+| **App** | `app/config.py`, `state.py` | `AppConfig`, `SessionSnapshot` | 起動設定正規化、パス検証、UI非依存の不変状態スナップショット（`+WEB`/`-WEB`含む） |
+| **App** | `app/commands.py`, `prompts.py` | `parse_slash_command`, `build_web_search_instruction` | 全スラッシュコマンドの構造化パース（`/web`, `/materials` 含む）、`+WEB`/`-WEB` 状態に応じた検索支援ルール生成 |
+| **App** | `app/controller.py`, `callbacks.py` | `GemioController`, `InteractionHandler`, `UserSearchRequest`, `UserSearchReply` | コンポーネント結線、APIキー遅延設定、`request_user_search` 結線、資料管理API、`cancel_active_execution` によるターン中断 |
 | **TUI** | `tui/app.py`, `bridge.py` | `GemioApp`, `ThreadModalBridge` | Textual メインアプリ、Worker管理、ワーカースレッド⇄ModalScreen間の同期確認ブリッジ |
-| **TUI** | `tui/widgets/*`, `screens/*` | `StatusHeader`, `TurnWidget`, 9種 `ModalScreen` | ユーザー生テキスト表示＋AI Markdown描画タイムライン、ツール折りたたみ、各種診断/確認モーダル |
+| **TUI** | `tui/widgets/*`, `screens/*` | `StatusHeader`, `TurnWidget`, 11種 `ModalScreen` | ユーザー生テキスト表示＋AI Markdown描画タイムライン、ツール折りたたみ、`UserSearchModal`・`MaterialsModal` 等各種モーダル |
 | **CLI** | `cli/main.py` | `parse_args`, `check_tty_available`, `run_cli`, `main` | CLI引数解析、TTY・パス・サンドボックスのプリフライト検証、`GemioApp` 起動と終了コード管理 |
 
 ---
@@ -263,7 +263,7 @@ gemio/
   * バックオフ仕様: デフォルト最大 `3` 回、`2.0秒 ➔ 4.0秒 ➔ 8.0秒` ＋ ランダムジッター（最低待機 `1.0秒`）。待機時は `on_retry_warning` コールバックへ通知します。
 * **`TokenUsageTracker` によるソース別集計**:
   * `record(response, source="chat" | "search" | "compaction")` により、呼び出し元ごとのAPIコール回数と累積トークン（`prompt`, `candidates`, `thoughts`, `cached`, `tool_use`, `total`）を加算します。
-  * **重要仕様**: 現在の対話コンテキスト規模を表す `last_prompt_tokens`（プロンプトヘッダーや `/tokens` の健全性診断に使用、警告閾値 `50,000` / 危険閾値 `150,000`）は **`source == "chat"` のときのみ更新**されます。これにより、途中で軽量な `/search` や要約圧縮を実行しても対話コンテキスト量の計測値が上書きされません。
+  * **重要仕様**: 現在の対話コンテキスト規模を表す `last_prompt_tokens`（プロンプトヘッダーや `/tokens` の健全性診断に使用、警告閾値 `50,000` / 危険閾値 `150,000`）は **`source == "chat"` のときのみ更新**されます。これにより、途中で要約圧縮を実行しても対話コンテキスト量の計測値が上書きされません。
 
 ---
 
@@ -275,11 +275,10 @@ gemio/
 | クラス・メソッド | 機能概要 | 現在のTUI/App接続状態 |
 | :--- | :--- | :--- |
 | `ChatHistory.append_turn` / `to_contents` / `clear` | ターン単位の履歴蓄積・API用展開・全消去 | ✅ **接続済**（通常対話・`/clear`） |
-| `MaterialStore.add_search_result` / `clear` / `format_for_prompt` | Web検索資料のSHA-256重複排除蓄積・破棄・先頭注入 | ✅ **接続済**（検索カード `[+ 資料に追加]`・`/search --save`・`/search --clear`・`/clear --all`） |
+| `MaterialStore.add_user_document` / `remove` / `clear` / `format_for_prompt` | ユーザー提供資料のSHA-256重複排除蓄積・更新・削除・先頭注入 | ✅ **接続済**（`UserSearchModal` `[前提資料に追加し送信]`・`MaterialsModal`・`/materials`・`/clear --all`） |
 | `ChatHistory.rewind(steps)` | Function Calling整合性を壊さないターン単位の巻き戻し | ✅ **接続済**（`/rewind`・コマンドパレット） |
 | `ChatHistory.get_last_response_text` / カードコピー | 入力プロンプト・AI回答テキストの取得・コピー | ✅ **接続済**（`/copy`・各カード `[Copy]`・コマンドパレット） |
 | `ContextCompactor.compact` / `ChatSession.compact` | 古い対話ターン群をLLMで4項目構造化サマリへ圧縮置換 | ✅ **接続済**（`/compact`・コマンドパレット） |
-| `MaterialStore.add_user_document` / `remove` / `format_for_display` | ユーザー指定資料の追加（`source_hash` 更新対応）・個別削除・一覧表示 | 🔧 **Core実装済（TUI未接続）** |
 | `ChatSession.export_context_markdown` | 前提資料＋要約＋選択ターンの一括Markdownエクスポート | 🔧 **Core実装済（TUI未接続）** |
 
 #### 履歴と前提資料のデータ構造のポイント
@@ -290,7 +289,7 @@ gemio/
 
 ---
 
-### 3.3 実行エンジン (`agent.py` vs `search.py` の完全分離)
+### 3.3 実行エンジン (`agent.py`) と検索支援診断 (`search.py`)
 
 #### `ChatAgent` (`src/gemio/core/agent.py`)
 * `automatic_function_calling` を明示的に無効化（`disable=True`）し、自前の `_execute_agent_loop` でツール呼び出しを制御します。
@@ -302,10 +301,11 @@ gemio/
   3. **連続実行上限（`max_iterations`、標準20回）到達時**: `on_iteration_limit` でユーザーが「中断」を選んだ場合は、途中の未完ツール往復を破棄して `[user_content]` のみにロールバックし、中断応答の `model` メッセージを添えてクリーンにターンを閉じます。
   4. **`cancel_event` による安全なターン中断（TUI `Esc` 連動）**: ループ先頭・API応答直後・各ツール実行前後に `cancel_event.is_set()` を検査し、キャンセル検知時は未実行ツールのスキップ応答補完を行った上で `ChatTurn(aborted=True)` として安全にターンを終了します。
 
-#### `SearchAgent` (`src/gemio/core/search.py`)
-* `tools=[{"google_search": {}}]` 専用の設定で動作し、ローカル履歴・`MaterialStore`・過去の検索履歴を一切保持・参照しない**完全ステートレス（1問1答）**の調査エージェントとして実装されています。
-* `ChatAgent` から `web_search(query)` ツール経由で呼び出される際は、`validate_search_query_safety()` によるプリフライト検査（物理パス露出・機密トークン形式・600文字上限）を通過した後、**承認モード（`NORMAL` / `EDIT` / `TRUST`）を問わず常に送信プロンプト全文の人間確認**を経て実行され、`format_search_result_for_tool()` により暗号化リダイレクトURLを除いた構造化テキストとして `function_response` へ返却されます。
-* APIエラー発生時および `cancel_event` キャンセル時は `SearchResult(succeeded=False)`（キャンセル時は `aborted=True`）を返します。
+#### 検索支援診断 & 境界整形 (`src/gemio/core/search.py`)
+* Google Search Grounding 規約適合性レビュー（`#017`）に伴い、Gemio 本体からの外部検索 API 自動呼び出し（旧 `SearchAgent`）は廃止され、以下の純粋関数群による検査・診断・整形を提供します：
+  * **`validate_search_query_safety()`**: AI が `request_user_search` で提案する推奨クエリ内にローカル物理パス・既知機密キー・600文字超の長文が混入していないかをモーダル表示前に検査します。
+  * **`diagnose_user_pasted_text()` / `sanitize_pasted_text()`**: ユーザーが `UserSearchModal` や `MaterialsModal` に貼り付けたテキストを検査し、秘密鍵・APIキー・`.env` 形式機密代入を **`has_blocking_secrets`（送信ブロック）**、ローカルパス表記を **注意喚起（非ブロック）**、不可視文字・チャット制御トークンを **無害化推奨**、IPI 疑い表現や 8,000 / 20,000 文字超のサイズを **警告** として構造化返却（`InputTextDiagnosis`）します。
+  * **`format_user_search_response()`**: 通常ツール応答として AI へ返す際、Spotlighting（`<<<EXTERNAL_REFERENCE_DATA>>>`）と事実参照専用・転載禁止の境界注記を付与して整形します。
 
 ---
 
@@ -397,10 +397,11 @@ gemio/
 ### 5.1 `gemio.app`（UI非依存のアプリケーション制御・コマンド解析層）
 `src/gemio/app/` は Textual を一切インポートせず、スラッシュコマンド実行と TUI メニュー・ショートカット操作の双方が共通利用するビジネスロジック層です。
 * **`AppConfig` (`config.py`)**: 起動オプションの正規化、パス検証（`AppStartupError`）、`--trust`/`--edit` の初期承認モード解決を行います。
-* **`SessionSnapshot` / `SearchOutcome` (`state.py`)**: UI ヘッダーやモーダルが参照する不変スナップショット（`+WEB` / `-WEB` 状態を含む）、および `/search` 単発検索・任意資料反映の5状態（`unretained`, `added`, `duplicate`, `failed`, `aborted`）を定義します。
-* **`parse_slash_command` (`commands.py`)**: 入力文字列を型付きコマンド構造体（`ClearCommand`, `ModelCommand`, `SearchCommand`, `RewindCommand`, `CompactCommand`, `CopyCommand` 等）または `ChatPromptInput` へ変換します。
+* **`SessionSnapshot` (`state.py`)**: UI ヘッダーやモーダルが参照する不変スナップショット（`+WEB` / `-WEB` 状態を含む）を定義します。
+* **`parse_slash_command` (`commands.py`)**: 入力文字列を型付きコマンド構造体（`ClearCommand`, `ModelCommand`, `WebModeCommand`, `MaterialsCommand`, `RewindCommand`, `CompactCommand`, `CopyCommand` 等）または `ChatPromptInput` へ変換します。
 * **`GemioController` (`controller.py`)**:
-  * 単一の `GenAIClient` を `ChatAgent`・`SearchAgent`・`ContextCompactor` で共有します。
+  * 単一の `GenAIClient` を `ChatAgent`・`ContextCompactor` で共有します。
+  * `request_user_search` ツールを結線し、クエリプリフライト検査・`allow_browser_open` 判定（`in_container` 時 `False`）・`UserSearchModal` 呼び出し・Controller 側最終機密ブロック・`TRUST` モード維持・`MaterialStore` 登録を行います。また、`list_materials()` / `add_user_material()` / `remove_material()` / `clear_materials()` の資料管理 API を提供します。
   * `in_container` かつ環境変数 API キー未設定時はクライアント初期化を保留し（`needs_api_key_input == True`）、TUI の `ApiKeyModal` 完了後に `set_api_key()` で結線します。
   * `cancel_active_execution()` により `cancel_event.set()` と `project.terminate_active_process()` を同時実行し、**アプリ自体を落とさず進行中ターンと子プロセスのみを安全に停止**します。
 
@@ -416,9 +417,10 @@ gemio/
      * **`AssistantMessageCard`**: Textual `Markdown` ウィジェットでリッチ描画します。
   3. `ActivityBar` + `PromptComposer`: ASCIIスピナー・経過秒数・`[Esc: ターン中断]` と、改行・折り返し連動の自動高さ伸縮（3〜8行）・`Ctrl+J` 送信・`Enter` 改行・標準 `F7`➔`Backspace` 全消去・`Ctrl+Z`/`Ctrl+Y` Undo/Redoを備えた入力欄。
   4. `Footer`: キーバインド表示（`F1`:ヘルプ / `F2`:モデル / `F3`:承認切替 / `F4`:入力欄 / `^Q`:終了）および `GemioCommandProvider`（`Ctrl+P` コマンドパレット）連携。
-* **`ThreadModalBridge` (`bridge.py`) と全9種 `ModalScreen` (`screens/`)**:
-  * 重い AI 通信・検索・`/sandbox` 診断はすべて `@work(thread=True)` ワーカースレッド上で実行します。
-  * ワーカースレッドからの承認要求・`ask_user`・上限確認時は、`ThreadModalBridge` が `app.call_from_thread` ＋ `threading.Event` でメインスレッドに `ApprovalModal` / `AskUserModal` / `IterationLimitModal` をプッシュし、メインイベントループを一切ブロックせずにユーザーの選択結果を返します。
+* **`ThreadModalBridge` (`bridge.py`) と全11種 `ModalScreen` (`screens/`)**:
+  * 重い AI 通信・`/sandbox` 診断はすべて `@work(thread=True)` ワーカースレッド上で実行します。
+  * ワーカースレッドからの承認要求・`ask_user`・`request_user_search`・上限確認時は、`ThreadModalBridge` が `app.call_from_thread` ＋ `threading.Event` でメインスレッドに `ApprovalModal` / `AskUserModal` / `UserSearchModal` / `IterationLimitModal` をプッシュし、メインイベントループを一切ブロックせずにユーザーの選択結果を返します。
+  * `/materials`（および `TokenUsageModal` の `[資料管理 (/materials)]` ボタン）からは `MaterialsModal` を開き、登録済み資料の一覧・プレビュー・手動追加・削除を行えます。
 
 ---
 
@@ -448,26 +450,28 @@ PromptSubmitted ➔ GemioApp._start_chat_worker()
         ├─ cancel_event 生成 & ターンログコールバック保持
         ├─ ChatAgent.process_prompt(..., cancel_event=cancel_event)
         │    ├─ ツール呼び出しログは call_from_thread で ActivityGroup (折りたたみ) へ追記
-        │    ├─ web_search(query) 呼び出し時 (+WEB 有効時):
-        │    │    └─ プリフライト安全性検査 ➔ 全承認モード共通で ApprovalModal (全文表示) 確認 ➔ ステートレス SearchAgent 実行
+        │    ├─ request_user_search(...) 呼び出し時 (+WEB 有効時):
+        │    │    └─ AIクエリ検査 ➔ ThreadModalBridge が UserSearchModal を表示 (Copy / ホスト時Open / 入力テキスト診断)
         │    ├─ 変更承認 / ask_user 発生時:
         │    │    └─ ThreadModalBridge がメインスレッドへ ApprovalModal / AskUserModal を push し Event.wait()
         │    └─ 実行中に Esc が押された場合:
-        │         └─ cancel_active_execution() が子プロセス・検索を即時中断し、未実行call補完後に aborted=True で終了
+        │         └─ cancel_active_execution() が子プロセスを即時中断し、未実行call補完後に aborted=True で終了
         └─ 完了時: AssistantMessageCard (Markdown) と StatusHeader を更新し入力待ちへ復帰
 ```
 
 ---
 
-### 6.3 `/search` 単発検索〜任意資料追加〜プロンプト先頭インジェクションフロー
+### 6.3 `request_user_search` / `/materials` 〜`MaterialStore` 蓄積〜同ターン即反映フロー
 ```text
-`/search <query>` ➔ GemioApp._start_search_worker()
-  ├─ 1. SearchTurnWidget (クエリ生テキスト) をマウントし Worker で controller.run_search() を実行
-  ├─ 2. 成功時は MaterialStore へ自動蓄積せず "unretained" として描画し、[+ 資料に追加] ボタンを有効化
-  ├─ 3. ユーザーが [+ 資料に追加] ボタンまたは `/search --save` を実行した時のみ:
-  │      controller.save_search_result_to_materials() により MaterialStore へ登録 ("added" / "duplicate")
-  └─ 4. 次回の通常プロンプト送信時:
-         保持中の資料があれば ChatSession.build_request_contents() が直近の user 発話先頭に【作業前提資料】を自動合成
+request_user_search(...) ➔ GemioController._execute_request_user_search()
+  ├─ 1. ユーザーが UserSearchModal に貼り付け、[通常応答で送信] または [前提資料に追加し送信] を選択
+  ├─ 2. Controller が最終機密チェックを実施:
+  │     ├─ [通常応答で送信]: format_user_search_response() (Spotlighting付) を function_response へ返却
+  │     └─ [前提資料に追加し送信]: MaterialStore.add_user_document(title=suggested_title) へ登録し、
+  │        function_response には短い参照通知のみを返却（二重送信防止）
+  ├─ 3. 同ターン内の次イテレーション先頭で ChatSession.build_request_contents() が再実行され、
+  │     ユーザー発話先頭に【作業前提資料】が即座に注入される（TRUST モードも維持）
+  └─ 4. 以降のターンおよび `/materials` 管理画面からいつでも閲覧・手動追加・削除可能
 ```
 
 ---
@@ -478,10 +482,10 @@ PromptSubmitted ➔ GemioApp._start_chat_worker()
 `src/gemio/__init__.py` は、`tui` や `cli` をインポートせず、外部のPythonアプリケーションや自動化スクリプトから軽量にインポートできるよう設計されています。
 
 * **パッケージメタ情報**: `__version__` (`"0.3.0"`)
-* **アプリケーション制御 (`app`)**: `AppConfig`, `AppStartupError`, `GemioController`, `InteractionHandler`, `SessionSnapshot`, `SearchOutcome`, `parse_slash_command`, `validate_project_dir`, `APP_DEFAULT_MAX_ITERATIONS`, `APP_WEB_SEARCH_ENABLED_INSTRUCTION`, `APP_WEB_SEARCH_DISABLED_INSTRUCTION`, `APP_SEARCH_GUIDANCE_INSTRUCTION`, `build_web_search_instruction`
-* **エージェント & クライアント**: `GenAIClient`, `TokenUsageTracker`, `ChatAgent`, `ChatTurnResult`, `SearchAgent`, `SearchResult`, `WEB_SEARCH_TOOLSET_NAME`, `MAX_TOOL_SEARCH_QUERY_CHARS`, `validate_search_query_safety`, `format_search_result_for_tool`
+* **アプリケーション制御 (`app`)**: `AppConfig`, `AppStartupError`, `GemioController`, `InteractionHandler`, `UserSearchRequest`, `UserSearchReply`, `SessionSnapshot`, `parse_slash_command`, `validate_project_dir`, `APP_DEFAULT_MAX_ITERATIONS`, `APP_WEB_SEARCH_ENABLED_INSTRUCTION`, `APP_WEB_SEARCH_DISABLED_INSTRUCTION`, `APP_SEARCH_GUIDANCE_INSTRUCTION`, `build_web_search_instruction`
+* **エージェント・通信 & 検索支援診断**: `GenAIClient`, `TokenUsageTracker`, `ChatAgent`, `ChatTurnResult`, `WEB_SEARCH_TOOLSET_NAME`, `MAX_TOOL_SEARCH_QUERY_CHARS`, `DIAGNOSIS_CAUTION_CHARS`, `DIAGNOSIS_WARNING_CHARS`, `SizeLevel`, `InputTextDiagnosis`, `validate_search_query_safety`, `diagnose_user_pasted_text`, `sanitize_pasted_text`, `format_user_search_response`
 * **コンテキスト & セッション**: `ChatSession`, `ChatHistory`, `ChatTurn`, `MaterialStore`, `ReferenceMaterial`, `MaterialKind`, `ContextCompactor`, `CompactionResult`, `compute_sha256`
-* **プロンプト & モデル設定**: `SystemPromptComposer`, `DEFAULT_SYSTEM_INSTRUCTION`, `DEFAULT_SEARCH_INSTRUCTION`, `DEFAULT_COMPACTION_INSTRUCTION`, `PROJECT_SYSTEM_INSTRUCTION`, `DEVELOPER_PROJECT_INSTRUCTION`, `DEFAULT_AI_MODEL_NAME`, `MIN_SUPPORTED_GEMINI_MAJOR`, `EXCLUDED_MODEL_KEYWORDS`, `MODEL_PRESETS`, `MODEL_ALIASES`, `ModelInfo`, `extract_model_version`, `normalize_model_id`, `resolve_model_name`, `is_text_generation_model`, `is_thinking_supported`, `model_info_from_sdk`, `get_fallback_model_catalog`, `sort_model_catalog`, `AgentLogCategory`
+* **プロンプト & モデル設定**: `SystemPromptComposer`, `DEFAULT_SYSTEM_INSTRUCTION`, `DEFAULT_COMPACTION_INSTRUCTION`, `PROJECT_SYSTEM_INSTRUCTION`, `DEVELOPER_PROJECT_INSTRUCTION`, `DEFAULT_AI_MODEL_NAME`, `MIN_SUPPORTED_GEMINI_MAJOR`, `EXCLUDED_MODEL_KEYWORDS`, `MODEL_PRESETS`, `MODEL_ALIASES`, `ModelInfo`, `extract_model_version`, `normalize_model_id`, `resolve_model_name`, `is_text_generation_model`, `is_thinking_supported`, `model_info_from_sdk`, `get_fallback_model_catalog`, `sort_model_catalog`, `AgentLogCategory`
 * **Skills & ツール基盤**: `SkillLoader`, `SkillManager`, `SkillSpec`, `parse_skill_markdown`, `ToolRegistry`, `Toolset`, `ToolSpec`, `ToolProvider`, `StaticToolProvider`, `DynamicToolsetProvider`, `get_builtin_toolset`, `load_project_toolsets`, `agent_tools`, `get_current_date`, `get_current_time`
 * **プロジェクト & セキュリティ**: `Project`, `DeveloperProject`, `APPROVAL_MODE_NORMAL`, `APPROVAL_MODE_EDIT`, `APPROVAL_MODE_TRUST`, `AgentExecutionAborted`, `SandboxSecurityError`, `scrub_environment`, `is_sensitive_env_key`, `truncate_command_output`, `summarize_text_for_display`
 
@@ -559,3 +563,4 @@ finally:
 | 2026-11-21 | AI Agent | 運用中 | 動的モデルカタログ・スペックキャッシュと Thinking 自動統合（`#015`：`ModelInfo`、`GenAIClient.list_available_models` / `supports_thinking`、`AgentLogCategory.THOUGHT`、`ModelSelectModal` 動的更新）およびクロスプラットフォーム向けキーバインド刷新（`Ctrl+J`送信・`F4`入力欄移動・`Ctrl+Y` Redo維持）を反映。 |
 | 2026-11-22 | AI Agent | 運用中 | 動的モデル抽出条件の厳密化（`gemini-3` 以上＋7除外語部分一致除外）、ソート仕様変更（動的優先➔新バージョン順・同一バージョン順序維持）、デフォルトモデル `gemini-4-neon` および `carbon`/`hydrogen` 追加、ならびに `ModelSelectModal` のワイド化・余白解消を反映。 |
 | 2026-11-23 | AI Agent | 運用中 | 作業エージェント連携型Web検索と検索スイッチ（`#016` / `v0.3.0`：`SearchAgent` ステートレス化、`web_search` ツールのプリフライト検査＋全モード全文常時確認、`Toolset.enabled`、`+WEB`/`-WEB` ヘッダーバッジ、および `/search` 単発検索＋任意資料追加）を反映。 |
+| 2026-11-24 | AI Agent | 運用中 | Google Search Grounding 廃止と人間介在型 Web 検索支援（`#017`：`request_user_search`、`UserSearchModal`、入力テキスト診断 `diagnose_user_pasted_text`、`/web`・`/materials`・`MaterialsModal`、同ターン資料即反映フロー）を反映。 |

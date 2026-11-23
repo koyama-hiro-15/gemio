@@ -1,7 +1,6 @@
 import ast
 from argparse import Namespace
 from pathlib import Path
-import threading
 from unittest.mock import MagicMock, patch
 
 from google.genai import types
@@ -20,16 +19,19 @@ from gemio.app import (
     ExitCommand,
     GemioController,
     HelpCommand,
+    MaterialsCommand,
     ModelCommand,
     RewindCommand,
     SandboxCommand,
-    SearchCommand,
     TokensCommand,
     TrustModeCommand,
+    UserSearchReply,
+    UserSearchRequest,
+    WebModeCommand,
     parse_slash_command,
     validate_project_dir,
 )
-from gemio.core.search import SearchResult
+from gemio.core.exceptions import AgentExecutionAborted
 from gemio.project import (
     APPROVAL_MODE_EDIT,
     APPROVAL_MODE_NORMAL,
@@ -61,7 +63,6 @@ def test_app_package_has_no_ui_framework_imports():
 
 def test_app_config_validation_and_approval_resolution(tmp_path):
     """AppConfig のディレクトリ検証（AppStartupError）・Web検索初期値・初期承認モード解決が正確に動作すること"""
-    # 1. 存在しないディレクトリ・ファイル指定時は AppStartupError となること
     with pytest.raises(AppStartupError):
         validate_project_dir(tmp_path / "missing_dir")
 
@@ -70,7 +71,6 @@ def test_app_config_validation_and_approval_resolution(tmp_path):
     with pytest.raises(AppStartupError):
         validate_project_dir(dummy_file)
 
-    # 2. Namespace からの構築とモデルエイリアス解決・Web検索デフォルトON / --no-web-search OFF
     ns = Namespace(
         project_dir=str(tmp_path),
         model="argon",
@@ -90,7 +90,6 @@ def test_app_config_validation_and_approval_resolution(tmp_path):
     ns_no_web = Namespace(project_dir=str(tmp_path), no_web_search=True)
     assert AppConfig.from_namespace(ns_no_web).enable_web_search is False
 
-    # 3. --trust 同意時は TRUST、拒否時は --edit があれば EDIT へフォールバック
     assert cfg.resolve_initial_approval_mode(trust_consented=True) == (
         APPROVAL_MODE_TRUST,
         False,
@@ -108,7 +107,7 @@ def test_app_config_validation_and_approval_resolution(tmp_path):
 
 
 def test_parse_slash_command_all_variants():
-    """スラッシュコマンドパーサが全コマンド・エイリアス・オプション・通常入力を正確に構造化すること"""
+    """スラッシュコマンドパーサが全コマンド（/web, /materials 含む）・エイリアス・通常入力を正確に構造化すること"""
     assert parse_slash_command("   \n\t  ") is None
 
     assert parse_slash_command("/exit") == ExitCommand()
@@ -138,18 +137,23 @@ def test_parse_slash_command_all_variants():
     assert parse_slash_command("/model") == ModelCommand(target_model=None)
     assert parse_slash_command("/model 3.8") == ModelCommand(target_model="3.8")
 
-    assert parse_slash_command("/search") == SearchCommand(show_help=True)
-    assert parse_slash_command("/s") == SearchCommand(show_help=True)
-    assert parse_slash_command("/search on") == SearchCommand(toggle_enabled=True)
-    assert parse_slash_command("/s enable") == SearchCommand(toggle_enabled=True)
-    assert parse_slash_command("/search off") == SearchCommand(toggle_enabled=False)
-    assert parse_slash_command("/s disable") == SearchCommand(toggle_enabled=False)
-    assert parse_slash_command("/search --save") == SearchCommand(save_last=True)
-    assert parse_slash_command("/s -s") == SearchCommand(save_last=True)
-    assert parse_slash_command("/search --clear") == SearchCommand(clear_materials=True)
-    assert parse_slash_command("/s -c") == SearchCommand(clear_materials=True)
-    assert parse_slash_command("/search Python 3.15") == SearchCommand(
-        query="Python 3.15"
+    # /web [on|off]
+    assert parse_slash_command("/web") == WebModeCommand(enable=None)
+    assert parse_slash_command("/web on") == WebModeCommand(enable=True)
+    assert parse_slash_command("/web enable") == WebModeCommand(enable=True)
+    assert parse_slash_command("/web off") == WebModeCommand(enable=False)
+    assert parse_slash_command("/web disable") == WebModeCommand(enable=False)
+
+    # /materials [clear | rm <id>]
+    assert parse_slash_command("/materials") == MaterialsCommand(action="open")
+    assert parse_slash_command("/mat") == MaterialsCommand(action="open")
+    assert parse_slash_command("/materials clear") == MaterialsCommand(action="clear")
+    assert parse_slash_command("/mat --clear") == MaterialsCommand(action="clear")
+    assert parse_slash_command("/materials rm m1") == MaterialsCommand(
+        action="remove", target="m1"
+    )
+    assert parse_slash_command("/mat del 2") == MaterialsCommand(
+        action="remove", target="2"
     )
 
     assert parse_slash_command("/copy") == CopyCommand()
@@ -158,12 +162,12 @@ def test_parse_slash_command_all_variants():
     assert parse_slash_command("/rewind") == RewindCommand(steps=1)
     assert parse_slash_command("/undo 3") == RewindCommand(steps=3)
 
-    # スラッシュから始まるファイルパス記述等の通常プロンプトが誤判定されないこと
+    # 旧 /search は廃止され通常プロンプト扱いになること
+    assert parse_slash_command("/search Python 3.15") == ChatPromptInput(
+        text="/search Python 3.15"
+    )
     assert parse_slash_command("/etc/hosts の設定形式を教えて") == ChatPromptInput(
         text="/etc/hosts の設定形式を教えて"
-    )
-    assert parse_slash_command("リファクタリングしてください") == ChatPromptInput(
-        text="リファクタリングしてください"
     )
 
 
@@ -185,11 +189,9 @@ def test_controller_deferred_api_key_and_trust_consent_lifecycle(tmp_path):
         assert ctrl.needs_api_key_input is True
         assert ctrl.is_client_ready is False
         assert ctrl.needs_initial_trust_consent is True
-        # 同意前は安全側の EDIT モードかつ Web検索はデフォルト +WEB であること
         assert ctrl.project.approval_mode == APPROVAL_MODE_EDIT
         assert ctrl.web_search_enabled is True
 
-        # APIキー未設定での対話実行はエラーになるが、スナップショット取得は安全に行えること
         snap = ctrl.get_snapshot()
         assert snap.mode_badge_text == "DEV:in-container"
         assert snap.approval_badge_text == "EDIT"
@@ -197,14 +199,12 @@ def test_controller_deferred_api_key_and_trust_consent_lifecycle(tmp_path):
         with pytest.raises(RuntimeError):
             ctrl.run_chat_turn("テスト")
 
-        # APIキー設定後にエージェントが利用可能になること
         with patch("gemio.core.client.genai.Client") as mock_genai:
             ctrl.set_api_key("DUMMY_CONTAINER_KEY")
             assert ctrl.needs_api_key_input is False
             assert ctrl.is_client_ready is True
             mock_genai.assert_called_once_with(api_key="DUMMY_CONTAINER_KEY")
 
-        # トラスト同意を適用すると TRUST モードへ昇格すること
         mode, fb = ctrl.apply_initial_trust_consent(True)
         assert mode == APPROVAL_MODE_TRUST
         assert fb is False
@@ -212,11 +212,10 @@ def test_controller_deferred_api_key_and_trust_consent_lifecycle(tmp_path):
         assert ctrl.get_snapshot().approval_badge_text == "TRUST"
 
 
-def test_controller_single_search_and_selective_material_saving(tmp_path):
+def test_controller_materials_management_and_secret_blocking(tmp_path):
     """
-    1. /search (run_search) は単発検索として unretained を返し、自動では MaterialStore へ追加しないこと
-    2. save_search_result_to_materials により任意で資料追加・重複判定（added / duplicate）が行えること
-    3. 失敗・中断時の状態（failed / aborted）およびスキル・セッションクリア連動が動作すること
+    GemioController の資料管理API（list_materials, add_user_material, remove_material, clear_materials）と
+    機密混入時の登録ブロック、およびセッションリセット連携が正しく動作すること
     """
     skill_dir = tmp_path / ".gemio" / "skills" / "sample-skill"
     skill_dir.mkdir(parents=True)
@@ -230,6 +229,7 @@ def test_controller_single_search_and_selective_material_saving(tmp_path):
     mock_handler.request_approval.return_value = "y"
     mock_handler.ask_user.return_value = "選択肢1"
     mock_handler.confirm_iteration_limit.return_value = (True, 5)
+    mock_handler.request_user_search.return_value = UserSearchReply(action="skip")
 
     with patch("gemio.core.client.genai.Client"):
         ctrl = GemioController(cfg, interaction_handler=mock_handler)
@@ -240,186 +240,200 @@ def test_controller_single_search_and_selective_material_saving(tmp_path):
 
         enabled, changed = ctrl.set_edit_mode()
         assert (enabled, changed) == (True, True)
-        assert ctrl.set_edit_mode(True) == (True, False)
-
         assert ctrl.set_model("3.8") == "gemini-3.8-flash"
-        assert ctrl.ai_client.model_name == "gemini-3.8-flash"
 
-        ctrl.token_tracker._usage["last_prompt_tokens"] = 60_000
-        assert ctrl.get_snapshot().context_health == "warning"
-        ctrl.token_tracker._usage["last_prompt_tokens"] = 160_000
-        assert ctrl.get_snapshot().context_health == "danger"
+        # 機密情報を含む手動追加はブロックされること
+        fake_key = "AI" + "za" + ("X" * 28)
+        with pytest.raises(ValueError):
+            ctrl.add_user_material("不正資料", f"api_key={fake_key}")
 
-        # 検索未実行時は save_search_result_to_materials が None を返すこと
-        assert ctrl.save_search_result_to_materials() is None
+        # 正常な資料の追加・重複判定・個別削除・全クリア
+        m1, st1 = ctrl.add_user_material("Textual仕様", "Textual 8 の最新 API")
+        assert st1 == "added"
+        assert len(ctrl.list_materials()) == 1
+        _, st_dup = ctrl.add_user_material("別名", "Textual 8 の最新 API")
+        assert st_dup == "duplicate"
 
-        # 1. 単発検索直後は unretained であり、MaterialStore には自動蓄積されないこと
-        assert ctrl.search_agent is not None
-        ok_res = SearchResult(
-            query="Textual 8",
-            response_text="Textual 8 の新機能解説",
-            sources=[{"title": "Textual Docs", "url": "https://textual.textualize.io"}],
-            created_at="10:00:00",
-            succeeded=True,
-        )
-        with patch.object(ctrl.search_agent, "search", return_value=ok_res):
-            out_single = ctrl.run_search("Textual 8")
-            assert out_single.material_status == "unretained"
-            assert out_single.total_materials == 0
-            assert len(ctrl.chat_session.materials) == 0
+        m2, st2 = ctrl.add_user_material("PEP 735", "Dependency groups spec")
+        assert st2 == "added"
+        assert len(ctrl.list_materials()) == 2
 
-        # 2. 任意保存を実行した時のみ added / duplicate になること
-        saved_once = ctrl.save_search_result_to_materials()
-        assert saved_once is not None
-        assert saved_once.material_status == "added"
-        assert saved_once.total_materials == 1
+        removed = ctrl.remove_material(m1.material_id)
+        assert removed is not None and removed.material_id == m1.material_id
+        assert len(ctrl.list_materials()) == 1
 
-        saved_dup = ctrl.save_search_result_to_materials()
-        assert saved_dup is not None
-        assert saved_dup.material_status == "duplicate"
-        assert saved_dup.total_materials == 1
-
-        fail_res = SearchResult(
-            query="Err",
-            response_text="通信エラー",
-            sources=[],
-            created_at="10:01:00",
-            succeeded=False,
-        )
-        with patch.object(ctrl.search_agent, "search", return_value=fail_res):
-            out_fail = ctrl.run_search("Err")
-            assert out_fail.material_status == "failed"
-            assert out_fail.total_materials == 1
-
-        abort_res = SearchResult(
-            query="Cancel",
-            response_text="中断",
-            sources=[],
-            created_at="10:02:00",
-            succeeded=False,
-            aborted=True,
-        )
-        with patch.object(ctrl.search_agent, "search", return_value=abort_res):
-            out_abort = ctrl.run_search("Cancel")
-            assert out_abort.material_status == "aborted"
-            assert out_abort.total_materials == 1
-
-        assert ctrl.clear_search_materials() == 1
-        assert len(ctrl.chat_session.materials) == 0
+        assert ctrl.clear_materials() == 1
+        assert len(ctrl.list_materials()) == 0
 
         ctrl.skill_manager.activate("sample-skill")
         assert ctrl.get_snapshot().active_skills == ("sample-skill",)
         ctrl.clear_session(clear_materials=True)
         assert ctrl.get_snapshot().active_skills == ()
-        assert ctrl.last_search_result is None
 
 
-def test_agent_web_search_tool_always_confirms_full_prompt_in_all_modes_and_respects_toggle(
-    tmp_path,
-):
+def test_request_user_search_tool_all_flows_security_and_trust_preservation(tmp_path):
     """
-    1. +WEB / -WEB の切替が有効ツール一覧（Static / Dynamic 両方）とシステムプロンプトへ即時同期すること
-    2. NORMAL / EDIT / TRUST のすべての承認モードで必ず承認コールバックが呼ばれ、
-       500文字超のクエリでも省略なしでプロンプト全文が提示されること
-    3. 拒否 ('n') 時にファイル用サーキットブレーカー (_rejection_pending) が汚染されないこと
-    4. プリフライト違反（ローカルパス混入）時は承認モーダルを出す前にブロックされること
+    1. +WEB / -WEB の切替が request_user_search ツールとシステムプロンプトへ即時同期すること
+    2. AI提案クエリのプリフライト検査（パス・機密ブロック）がモーダル表示前に機能すること
+    3. in_container 時は allow_browser_open=False、通常時は True が渡されること
+    4. send_once（Spotlighting付）と save_material（AI指定タイトル・二重送信なし）の動作
+    5. 受け取ったテキストに機密が含まれる場合、Controller側でもブロックすること
+    6. skip / abort の処理および外部テキスト受信後も TRUST モードが維持されること
     """
-    approvals_seen: list[str] = []
-    decision_box = {"val": "y"}
+    seen_requests: list[UserSearchRequest] = []
+    reply_box = {"val": UserSearchReply(action="skip")}
 
-    def approval_cb(desc: str) -> str:
-        approvals_seen.append(desc)
-        return decision_box["val"]
+    def search_cb(req: UserSearchRequest) -> UserSearchReply:
+        seen_requests.append(req)
+        return reply_box["val"]
 
     cfg = AppConfig(project_path=tmp_path, dynamic_tools=True)
     with patch("gemio.core.client.genai.Client"):
-        ctrl = GemioController(cfg, approval_callback=approval_cb)
+        ctrl = GemioController(cfg, request_user_search_callback=search_cb)
         assert ctrl.chat_agent is not None
-        assert ctrl.search_agent is not None
 
-        # 1. デフォルト +WEB 時のツール・プロンプト検証
+        # 1. デフォルト +WEB と -WEB の切り替え同期
         assert ctrl.web_search_enabled is True
-        assert "web_search" in [f.__name__ for f in ctrl.chat_agent.tools]
+        assert "request_user_search" in [f.__name__ for f in ctrl.chat_agent.tools]
         assert APP_WEB_SEARCH_ENABLED_INSTRUCTION.strip() in ctrl.chat_agent.instruction
 
-        # -WEB に切り替えるとツールとプロンプトが即座に切り替わること
-        enabled, changed = ctrl.set_web_search_enabled(False)
-        assert (enabled, changed) == (False, True)
+        ctrl.set_web_search_enabled(False)
         assert ctrl.get_snapshot().web_badge_text == "-WEB"
-        assert "web_search" not in [f.__name__ for f in ctrl.chat_agent.tools]
+        assert "request_user_search" not in [f.__name__ for f in ctrl.chat_agent.tools]
         assert APP_WEB_SEARCH_DISABLED_INSTRUCTION.strip() in ctrl.chat_agent.instruction
-        disabled_msg = ctrl.tool_provider.execute("web_search", {"query": "test"})
+        disabled_msg = ctrl.tool_provider.execute(
+            "request_user_search",
+            {
+                "purpose": "p",
+                "queries": ["q"],
+                "what_to_check": "w",
+                "suggested_title": "t",
+            },
+        )
         assert "無効化" in disabled_msg
 
-        # +WEB に戻す
         ctrl.set_web_search_enabled(True)
-        assert ctrl.get_snapshot().web_badge_text == "+WEB"
 
-        # 2. NORMAL / EDIT / TRUST すべてで省略なしの全文確認が入ること
-        long_safe_query = "最新の公的統計と技術動向の調査: " + ("あ" * 520)
-        assert 500 < len(long_safe_query) <= 600
-
-        mock_search_res = SearchResult(
-            query=long_safe_query,
-            response_text="調査結果の要点です。",
-            sources=[
-                {
-                    "title": "Official Portal",
-                    "url": "https://vertexaisearch.cloud.google.com/redirect/xyz",
-                },
-                {
-                    "title": "Python Docs",
-                    "url": "https://docs.python.org/3/",
-                },
-            ],
-            created_at="12:00:00",
-            succeeded=True,
+        # 2. AIクエリのプリフライト検査（ローカルパス混入時はコールバック前にブロック）
+        blocked_q = ctrl.tool_provider.execute(
+            "request_user_search",
+            {
+                "purpose": "調査",
+                "queries": [f"{tmp_path}/src/app.py について"],
+                "what_to_check": "確認点",
+                "suggested_title": "タイトル",
+            },
         )
+        assert "[SECURITY_BLOCK]" in blocked_q
+        assert len(seen_requests) == 0
 
-        with patch.object(
-            ctrl.search_agent, "search", return_value=mock_search_res
-        ) as mock_search:
-            for mode in (
-                APPROVAL_MODE_NORMAL,
-                APPROVAL_MODE_EDIT,
-                APPROVAL_MODE_TRUST,
-            ):
-                ctrl.set_approval_mode(mode)
-                approvals_seen.clear()
-                tool_out = ctrl.tool_provider.execute(
-                    "web_search", {"query": long_safe_query}
-                )
-                assert len(approvals_seen) == 1, f"{mode} モードで承認確認が呼ばれていません"
-                # 520文字以上のクエリが '...' 等で途中省略されず全文そのまま含まれていること
-                assert long_safe_query in approvals_seen[0]
-                assert "【Web検索結果（外部最新情報）】" in tool_out
-                assert "Python Docs (docs.python.org)" in tool_out
-                assert "vertexaisearch" not in tool_out
-                # AIツール経由の検索結果は MaterialStore へ自動蓄積されないこと
-                assert len(ctrl.chat_session.materials) == 0
-            assert mock_search.call_count == 3
+        # 3. send_once 動作（allow_browser_open=True + Spotlighting付 + TRUST維持）
+        ctrl.set_trust_mode(True)
+        reply_box["val"] = UserSearchReply(
+            action="send_once",
+            content="FastAPI lifespan の公式例です。",
+        )
+        once_out = ctrl.tool_provider.execute(
+            "request_user_search",
+            {
+                "purpose": "lifespan の書き方確認",
+                "queries": ["FastAPI lifespan official docs"],
+                "what_to_check": "@asynccontextmanager のコード例",
+                "suggested_title": "FastAPI Lifespan",
+            },
+        )
+        assert len(seen_requests) == 1
+        assert seen_requests[0].allow_browser_open is True
+        assert "<<<EXTERNAL_REFERENCE_DATA>>>" in once_out
+        assert "FastAPI lifespan の公式例です。" in once_out
+        assert len(ctrl.chat_session.materials) == 0
+        assert ctrl.project.trust_mode is True
 
-            # 3. 拒否 ('n') 時は [REJECTED] を返し、Project._rejection_pending を汚染しないこと
-            ctrl.set_approval_mode(APPROVAL_MODE_TRUST)
-            decision_box["val"] = "n"
-            rej_out = ctrl.tool_provider.execute(
-                "web_search", {"query": "FastAPI 最新バージョン"}
+        # 4. save_material 動作（AI指定タイトルで登録 + 二重送信防止の短文返却 + TRUST維持）
+        reply_box["val"] = UserSearchReply(
+            action="save_material",
+            content="公式ガイドの全文抜粋データ",
+        )
+        save_out = ctrl.tool_provider.execute(
+            "request_user_search",
+            {
+                "purpose": "仕様確認",
+                "queries": ["Python 3.13 release notes"],
+                "what_to_check": "破壊的変更",
+                "suggested_title": "Python 3.13 仕様メモ",
+            },
+        )
+        assert "[作業前提資料に登録(added)]" in save_out
+        assert "Python 3.13 仕様メモ" in save_out
+        assert "公式ガイドの全文抜粋データ" not in save_out
+        mats = ctrl.list_materials()
+        assert len(mats) == 1
+        assert mats[0].title == "Python 3.13 仕様メモ"
+        assert mats[0].content == "公式ガイドの全文抜粋データ"
+        assert ctrl.project.trust_mode is True
+
+        # 5. UIバイパス等で機密が返った場合も Controller 側でブロックされること
+        fake_gh = "ghp_" + ("Z" * 30)
+        reply_box["val"] = UserSearchReply(
+            action="send_once",
+            content=f"token is {fake_gh}",
+        )
+        sec_out = ctrl.tool_provider.execute(
+            "request_user_search",
+            {
+                "purpose": "確認",
+                "queries": ["query"],
+                "what_to_check": "check",
+                "suggested_title": "title",
+            },
+        )
+        assert "[SECURITY_BLOCK]" in sec_out
+
+        # 6. skip および abort
+        reply_box["val"] = UserSearchReply(action="skip")
+        skip_out = ctrl.tool_provider.execute(
+            "request_user_search",
+            {
+                "purpose": "確認",
+                "queries": ["query"],
+                "what_to_check": "check",
+                "suggested_title": "title",
+            },
+        )
+        assert "[SKIPPED]" in skip_out
+
+        reply_box["val"] = UserSearchReply(action="abort")
+        with pytest.raises(AgentExecutionAborted):
+            ctrl.tool_provider.execute(
+                "request_user_search",
+                {
+                    "purpose": "確認",
+                    "queries": ["query"],
+                    "what_to_check": "check",
+                    "suggested_title": "title",
+                },
             )
-            assert "[REJECTED]" in rej_out
-            assert ctrl.project._rejection_pending is False
-            # TRUSTモードのファイル書き込みがサーキットブレーカーで誤遮断されないこと
-            write_res = ctrl.project.write_file("note.txt", "ok")
-            assert "成功" in write_res
 
-            # 4. ローカル物理パスが含まれるクエリは承認モーダル前にプリフライトブロックされること
-            approvals_seen.clear()
-            decision_box["val"] = "y"
-            blocked_out = ctrl.tool_provider.execute(
-                "web_search",
-                {"query": f"{tmp_path} にある設定ファイルの仕様"},
-            )
-            assert "[SECURITY_BLOCK]" in blocked_out
-            assert len(approvals_seen) == 0
+    # 7. in_container 時は allow_browser_open=False が渡されること
+    seen_requests.clear()
+    dev_cfg = AppConfig(project_path=tmp_path, dev_mode=True)
+    with patch.object(DeveloperProject, "_is_running_in_container", return_value=True), \
+         patch.object(DeveloperProject, "_validate_in_container_security"), \
+         patch.dict("os.environ", {"GEMINI_API_KEY": "DUMMY_ENV_KEY"}, clear=True), \
+         patch("gemio.core.client.genai.Client"):
+        dev_ctrl = GemioController(dev_cfg, request_user_search_callback=search_cb)
+        reply_box["val"] = UserSearchReply(action="skip")
+        dev_ctrl.tool_provider.execute(
+            "request_user_search",
+            {
+                "purpose": "確認",
+                "queries": ["pytest asyncio docs"],
+                "what_to_check": "設定例",
+                "suggested_title": "pytest-asyncio",
+            },
+        )
+        assert len(seen_requests) == 1
+        assert seen_requests[0].allow_browser_open is False
 
 
 def test_safe_turn_cancellation_preserves_role_integrity_and_kills_subprocess(tmp_path):
@@ -428,7 +442,6 @@ def test_safe_turn_cancellation_preserves_role_integrity_and_kills_subprocess(tm
     1. project.terminate_active_process() が即座に呼ばれること
     2. 複数 function_call の途中であっても未実行 call にスキップ応答が補完され、
        ロール・ペア整合性を保ったまま aborted=True の ChatTurn として安全に終了すること
-    3. Web検索中にキャンセルされた際は aborted=True を返すこと
     """
     cfg = AppConfig(project_path=tmp_path, requested_edit=True)
     with patch("gemio.core.client.genai.Client"):
@@ -481,13 +494,6 @@ def test_safe_turn_cancellation_preserves_role_integrity_and_kills_subprocess(tm
             assert saved_turn.contents[4].role == "model"
             assert any(cat == "abort" for cat, _ in logs)
 
-        cancel_ev = threading.Event()
-        cancel_ev.set()
-        assert ctrl.search_agent is not None
-        search_res = ctrl.search_agent.search("Python", cancel_event=cancel_ev)
-        assert search_res.aborted is True
-        assert search_res.succeeded is False
-
 
 def test_compact_context_refreshes_context_tokens_and_keeps_existing_on_failure(tmp_path):
     """
@@ -516,7 +522,6 @@ def test_compact_context_refreshes_context_tokens_and_keeps_existing_on_failure(
         mock_sdk_cls.return_value = mock_sdk
         ctrl = GemioController(cfg)
 
-        # 圧縮前の肥大化状態（60,000 tokens -> warning）を模擬
         ctrl.token_tracker.record(
             SimpleNamespace(
                 usage_metadata=SimpleNamespace(
@@ -533,14 +538,12 @@ def test_compact_context_refreshes_context_tokens_and_keeps_existing_on_failure(
         assert ctrl.get_snapshot().context_tokens == 60_000
         assert ctrl.get_snapshot().context_health == "warning"
 
-        # ターン不足で compacted=False のときは count_tokens を呼ばず既存値維持
         ctrl.chat_session.history.append_turn(_turn("t1", "質問1", "回答1"))
         skip_res = ctrl.compact_context(keep_recent_turns=2)
         assert skip_res.compacted is False
         assert mock_sdk.models.count_tokens.call_count == 0
         assert ctrl.get_snapshot().context_tokens == 60_000
 
-        # 3ターンまで増やして圧縮成功 + count_tokens 成功 -> 即座に 3,400 tokens (normal) へ更新
         ctrl.chat_session.history.append_turn(_turn("t2", "質問2", "回答2"))
         ctrl.chat_session.history.append_turn(_turn("t3", "質問3", "回答3"))
         mock_sdk.models.generate_content.return_value = SimpleNamespace(
@@ -564,7 +567,6 @@ def test_compact_context_refreshes_context_tokens_and_keeps_existing_on_failure(
         assert snap.context_health == "normal"
         assert ctrl.get_token_usage()["compaction_api_calls"] == 1
 
-        # 2回目の圧縮で count_tokens が失敗した場合は既存の 3,400 を維持すること
         ctrl.token_tracker.set_context_tokens(45_000)
         ctrl.chat_session.history.append_turn(_turn("t4", "質問4", "回答4"))
         mock_sdk.models.count_tokens.side_effect = RuntimeError("count_tokens unavailable")

@@ -5,7 +5,6 @@ from unittest.mock import patch
 
 import gemio
 from gemio.core.prompts import (
-    DEFAULT_SEARCH_INSTRUCTION,
     DEFAULT_SYSTEM_INSTRUCTION,
     SystemPromptComposer,
 )
@@ -171,8 +170,6 @@ def test_core_system_instructions_isolation_and_dynamic_prompt_composer():
         "/search",
     ):
         assert leaked_term not in DEFAULT_SYSTEM_INSTRUCTION
-
-    assert "Google検索ツールを活用し" in DEFAULT_SEARCH_INSTRUCTION
 
     # SystemPromptComposer の合成順序・動的評価テスト（dev_mode 引数は存在しない）
     class DummyDynamicProvider(ToolProvider):
