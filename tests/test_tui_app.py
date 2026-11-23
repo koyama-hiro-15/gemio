@@ -456,6 +456,34 @@ async def test_phase1_layout_header_copy_buttons_collapsible_and_composer_height
             assert ed.content_region.height == 3
 
 
+async def test_composer_scrolls_immediately_on_newline_at_max_height(tmp_path):
+    """
+    PromptTextArea が最大高さ（外寸8行・内寸6行）に達した状態で最下行から改行したとき、
+    文字入力を待たずに即座に新しい行へスクロール追従すること
+    """
+    cfg = AppConfig(project_path=tmp_path)
+    with patch("gemio.core.client.genai.Client"):
+        ctrl = GemioController(cfg)
+        app = GemioApp(ctrl)
+
+        async with app.run_test(size=(80, 24)) as pilot:
+            editor = app.composer.editor
+            # 6行入力して最大高さ（外寸8行、内寸6行）まで拡大させる
+            editor.insert("1\n2\n3\n4\n5\n6")
+            await pilot.pause()
+            assert editor.outer_size.height == 8
+            assert editor.content_region.height == 6
+            assert editor.scroll_y == 0
+
+            # 6行目→7行目、7行目→8行目、8行目→9行目の各改行直後に即座に追従すること
+            for expected_row, expected_scroll in ((6, 1), (7, 2), (8, 3)):
+                await pilot.press("enter")
+                await pilot.pause()
+                assert editor.cursor_location == (expected_row, 0)
+                assert editor.max_scroll_y == expected_scroll
+                assert editor.scroll_y == expected_scroll
+
+
 async def test_thinking_model_enables_thoughts_and_displays_in_activity_group(tmp_path):
     """
     models.get() で thinking=True と判定されたモデルでは ThinkingConfig(include_thoughts=True) が付与され、

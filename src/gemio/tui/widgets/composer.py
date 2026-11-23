@@ -145,7 +145,15 @@ class PromptTextArea(TextArea):
         self.styles.height = new_height
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
+        old_height = self.styles.height
         self._sync_auto_height()
+        # TextArea.edit() は _refresh_size() より前に scroll_cursor_visible() を呼ぶため、
+        # 最大高さ到達後の改行などで virtual_size が増えた直後にスクロールが追従しない。
+        # Changed 処理時点では virtual_size が更新済みのため、ここで追従を補完する。
+        if self.styles.height == old_height:
+            self.scroll_cursor_visible()
+        else:
+            self.call_after_refresh(self.scroll_cursor_visible)
 
     def on_resize(self, event: events.Resize) -> None:
         self._sync_auto_height()
