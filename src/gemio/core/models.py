@@ -84,7 +84,6 @@ class AgentLogCategory:
     THOUGHT = "thought"
     WARNING = "warning"
     ABORT = "abort"
-    SEARCH = "search"
 
 
 @dataclass(frozen=True)

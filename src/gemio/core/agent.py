@@ -1,6 +1,5 @@
 """
 通常対話および Function Calling（ローカルツール実行）ループを担当する ChatAgent モジュール。
-Google検索グラウンディング等は保持せず、必要な外部調査支援は上位層ツール経由で処理します。
 """
 
 from dataclasses import dataclass

@@ -6,7 +6,7 @@ from typing import Literal
 
 from textual.message import Message
 
-HeaderBadgeTarget = Literal["sandbox", "approval", "web_search", "model", "tokens"]
+HeaderBadgeTarget = Literal["sandbox", "approval", "model", "tokens"]
 
 
 class PromptSubmitted(Message):

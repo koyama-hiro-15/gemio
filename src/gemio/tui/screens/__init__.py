@@ -12,7 +12,6 @@ from gemio.tui.screens.materials import MaterialsModal
 from gemio.tui.screens.model import ModelSelectModal
 from gemio.tui.screens.sandbox import SandboxStatusModal
 from gemio.tui.screens.tokens import TokenUsageModal
-from gemio.tui.screens.user_search import UserSearchModal
 
 __all__ = [
     "ApiKeyModal",
@@ -25,5 +24,4 @@ __all__ = [
     "SandboxStatusModal",
     "TokenUsageModal",
     "TrustConsentModal",
-    "UserSearchModal",
 ]

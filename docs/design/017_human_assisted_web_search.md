@@ -2,8 +2,10 @@
 
 **作成日:** 2026年11月24日  
 **最終更新日:** 2026年11月24日  
-**ステータス:** 実装完了（現行）  
+**ステータス:** 置換済み（Superseded by `#018`）  
 **対象システム:** `src/gemio/core/` (`search.py`, `prompts.py`, `context/materials.py`), `src/gemio/app/` (`commands.py`, `callbacks.py`, `controller.py`, `prompts.py`, `state.py`), `src/gemio/tui/` (`app.py`, `commands_palette.py`, `messages.py`, `styles/app.tcss`, `screens/user_search.py`, `screens/materials.py`, `screens/help.py`, `screens/tokens.py`, `widgets/header.py`, `widgets/welcome.py`), `tests/`  
+
+> **📦 廃止・置換に関する注記:** 実用面・操作負担の検証結果に基づき、本設計書で導入した Web 検索支援機能（`request_user_search`, `UserSearchModal`, `+WEB`/`-WEB`, `/web` 等）は [`018_remove_web_search_features.md`](./018_remove_web_search_features.md) によってすべて廃止されました（作業前提資料 `/materials` および入力テキスト診断機能のみ手動資料登録機能として `core/context/materials.py` へ統合・維持されています）。現行仕様は [`manuals/07_ARCHITECTURE_REFERENCE.md`](../../manuals/07_ARCHITECTURE_REFERENCE.md) を参照してください。
 
 ### 【要約】
 正式リリースに向けた法務・利用規約適合性レビューの結果、Gemini API の Google Search Grounding（`#016`）は TUI 表示要件・改変/再利用禁止・BYOK 形態の制約と両立しないことが判明したため廃止します。代わって、**Gemio（AI）が「調査目的・確認観点・推奨検索クエリ」を提示し、ユーザー自身がブラウザで検索して結果を貼り付ける専用ダイアログ（`UserSearchModal`）**、**リアルタイム入力テキスト診断**、**`TRUST` モードを妨げない `+WEB` / `-WEB` スイッチ（`/web [on|off]`）**、および **作業前提資料の管理画面（`/materials`）** を備えた人間介在型 Web 検索支援アーキテクチャへ刷新します。
@@ -308,3 +310,4 @@ class UserSearchReply:
 | :--- | :--- | :--- | :--- |
 | 2026-11-24 | AI Agent | 設計完了（実装準備中） | 初版作成。Google Search Grounding を廃止し、人間介在型 Web 検索支援（`UserSearchModal`、リアルタイム入力テキスト診断、`/web`・`/materials` 再編、通常応答/前提資料選択）の設計を策定。 |
 | 2026-11-24 | AI Agent | 実装完了（現行） | Core / App / TUI の全レイヤー実装、全91件の単体・ヘッドレスTUIテスト合格、および関連ドキュメント更新を完了。 |
+| 2026-11-24 | AI Agent | 置換済み（Superseded by `#018`） | Web 検索支援機能の全面廃止および作業前提資料の手動専用化（`#018`）に伴いステータスを更新。 |

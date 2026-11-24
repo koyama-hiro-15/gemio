@@ -4,7 +4,7 @@ from google.genai import types
 from textual.command import CommandPalette
 from textual.widgets import DataTable, Input
 
-from gemio.app import AppConfig, GemioController, UserSearchRequest
+from gemio.app import AppConfig, GemioController
 from gemio.project import (
     APPROVAL_MODE_EDIT,
     APPROVAL_MODE_TRUST,
@@ -22,7 +22,6 @@ from gemio.tui import (
     SandboxStatusModal,
     TokenUsageModal,
     TrustConsentModal,
-    UserSearchModal,
 )
 
 
@@ -387,13 +386,6 @@ async def test_modals_fit_content_height_and_keep_buttons_visible(tmp_path):
             ctrl = GemioController(cfg)
             app = GemioApp(ctrl)
             async with app.run_test(size=size) as pilot:
-                sample_req = UserSearchRequest(
-                    purpose="最新仕様の確認",
-                    queries=("FastAPI lifespan docs",),
-                    what_to_check="コード例",
-                    suggested_title="FastAPI Lifespan",
-                    allow_browser_open=True,
-                )
                 modals = [
                     ApprovalModal("write_file: a.py"),
                     AskUserModal("続行しますか？", ["はい", "いいえ"]),
@@ -405,7 +397,6 @@ async def test_modals_fit_content_height_and_keep_buttons_visible(tmp_path):
                     SandboxStatusModal(dev_small),
                     TokenUsageModal(ctrl.get_token_usage()),
                     HelpModal(),
-                    UserSearchModal(sample_req),
                     MaterialsModal(
                         list_callback=ctrl.list_materials,
                         add_callback=ctrl.add_user_material,
@@ -420,7 +411,7 @@ async def test_modals_fit_content_height_and_keep_buttons_visible(tmp_path):
                     btns = modal.query_one(".modal-buttons")
                     assert dlg.region.contains_region(btns.region)
                     if size == (100, 48) and not isinstance(
-                        modal, (HelpModal, UserSearchModal, MaterialsModal)
+                        modal, (HelpModal, MaterialsModal)
                     ):
                         # 内容が少ないダイアログが大画面一杯(92%=44行)に引き伸ばされていないこと
                         assert dlg.region.height <= 26
@@ -542,18 +533,14 @@ async def test_model_select_modal_fetches_dynamic_catalog_and_fills_dialog_witho
             assert ctrl.current_model == "gemini-flash-latest"
 
 
-async def test_user_search_modal_diagnosis_copy_open_and_materials_modal(tmp_path):
+async def test_materials_modal_diagnosis_sanitization_add_and_remove(tmp_path):
     """
-    1. UserSearchModal:
-       - allow_browser_open=False のとき [Open] ボタンが非表示であること
-       - allow_browser_open=True のとき [Open] で Google 検索 URL が開かれ、[Copy] でコピーされること
-       - タイトル入力欄がなく、AI指定タイトルプレビューのみ表示されること
-       - 機密検知時は送信ボタンが無効化され、パス入力時は警告のみで送信可能であること
-       - 不可視文字入力時に [無害化] ボタンで除去できること
-    2. MaterialsModal:
-       - タブ切替で手動追加（機密ブロック含む）・一覧表示・選択削除が動作すること
+    MaterialsModal にて:
+    1. 機密情報入力時は登録ボタンが無効化されること
+    2. ローカルパス入力時は注意表示のみで登録可能であり、不可視文字入力時に [無害化] で除去できること
+    3. 手動追加後に一覧テーブルへ反映され、選択削除できること
     """
-    from textual.widgets import Button, Static, TabbedContent, TextArea
+    from textual.widgets import Button, TabbedContent, TextArea
 
     cfg = AppConfig(project_path=tmp_path)
     with patch("gemio.core.client.genai.Client"):
@@ -561,82 +548,6 @@ async def test_user_search_modal_diagnosis_copy_open_and_materials_modal(tmp_pat
         app = GemioApp(ctrl)
 
         async with app.run_test(size=(100, 32)) as pilot:
-            # 1-A. allow_browser_open=False (in_container 相当) では [Open] ボタンがないこと
-            req_no_open = UserSearchRequest(
-                purpose="確認",
-                queries=("pytest asyncio",),
-                what_to_check="設定例",
-                suggested_title="pytest-asyncio",
-                allow_browser_open=False,
-            )
-            modal_no_open = UserSearchModal(req_no_open)
-            app.push_screen(modal_no_open)
-            await pilot.pause()
-            assert len(modal_no_open.query("#btn-open-q-1")) == 0
-            assert len(modal_no_open.query("#btn-copy-q-1")) == 1
-            assert len(modal_no_open.query(Input)) == 0
-            assert "pytest-asyncio" in str(
-                modal_no_open.query_one("#user-search-title-preview", Static).render()
-            )
-            modal_no_open.dismiss(None)
-            await pilot.pause()
-
-            # 1-B. allow_browser_open=True のときの Copy / Open / 診断 / 無害化検証
-            req_open = UserSearchRequest(
-                purpose="確認",
-                queries=("FastAPI lifespan",),
-                what_to_check="コード例",
-                suggested_title="FastAPI Lifespan",
-                allow_browser_open=True,
-            )
-            modal = UserSearchModal(
-                req_open,
-                forbidden_paths=[str(tmp_path)],
-            )
-            app.push_screen(modal)
-            await pilot.pause()
-            assert len(modal.query("#btn-open-q-1")) == 1
-
-            with patch.object(app, "copy_to_clipboard") as mock_copy:
-                await pilot.click("#btn-copy-q-1")
-                await pilot.pause()
-                mock_copy.assert_called_once_with("FastAPI lifespan")
-
-            with patch("gemio.tui.screens.user_search.webbrowser.open", return_value=True) as mock_web:
-                await pilot.click("#btn-open-q-1")
-                await pilot.pause()
-                mock_web.assert_called_once_with(
-                    "https://www.google.com/search?q=FastAPI+lifespan"
-                )
-
-            ta = modal.query_one("#user-search-textarea", TextArea)
-            send_once_btn = modal.query_one("#btn-send-once", Button)
-            save_mat_btn = modal.query_one("#btn-save-material", Button)
-            sanitize_btn = modal.query_one("#btn-sanitize", Button)
-
-            # 機密情報入力時は送信ボタンがブロック(disabled)されること
-            fake_secret = "AI" + "za" + ("K" * 28)
-            ta.load_text(f"APIキー: {fake_secret}")
-            await pilot.pause()
-            assert send_once_btn.disabled is True
-            assert save_mat_btn.disabled is True
-
-            # ローカルパスと不可視文字のみにすると送信可能になり、無害化ボタンで除去できること
-            ta.load_text(f"参照: {tmp_path}/guide.md\u200b の内容")
-            await pilot.pause()
-            assert send_once_btn.disabled is False
-            assert save_mat_btn.disabled is False
-            assert sanitize_btn.disabled is False
-
-            await pilot.click("#btn-sanitize")
-            await pilot.pause()
-            assert "\u200b" not in ta.text
-            assert sanitize_btn.disabled is True
-
-            modal.dismiss(None)
-            await pilot.pause()
-
-            # 2. MaterialsModal での手動追加と一覧削除
             mat_modal = MaterialsModal(
                 list_callback=ctrl.list_materials,
                 add_callback=ctrl.add_user_material,
@@ -649,8 +560,29 @@ async def test_user_search_modal_diagnosis_copy_open_and_materials_modal(tmp_pat
             mat_modal.query_one("#materials-tabs", TabbedContent).active = "tab-mat-add"
             await pilot.pause()
 
+            ta = mat_modal.query_one("#mat-add-content", TextArea)
+            add_btn = mat_modal.query_one("#btn-mat-add-submit", Button)
+            sanitize_btn = mat_modal.query_one("#btn-mat-sanitize", Button)
+
+            # 機密情報入力時は登録ボタンがブロック(disabled)されること
+            fake_secret = "AI" + "za" + ("K" * 28)
+            ta.load_text(f"APIキー: {fake_secret}")
+            await pilot.pause()
+            assert add_btn.disabled is True
+
+            # ローカルパスと不可視文字のみにすると登録可能になり、無害化ボタンで除去できること
+            ta.load_text(f"参照: {tmp_path}/guide.md\u200b の内容")
+            await pilot.pause()
+            assert add_btn.disabled is False
+            assert sanitize_btn.disabled is False
+
+            await pilot.click("#btn-mat-sanitize")
+            await pilot.pause()
+            assert "\u200b" not in ta.text
+            assert sanitize_btn.disabled is True
+
             mat_modal.query_one("#mat-add-title", Input).value = "手動登録テスト"
-            mat_modal.query_one("#mat-add-content", TextArea).load_text("公式仕様メモ")
+            ta.load_text("公式仕様メモ")
             await pilot.pause()
             await pilot.click("#btn-mat-add-submit")
             await pilot.pause()

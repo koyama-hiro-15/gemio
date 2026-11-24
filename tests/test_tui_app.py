@@ -9,7 +9,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Collapsible, Footer, Static, TextArea
 
 from gemio.app import AppConfig, GemioController
-from gemio.tui import GemioApp, MaterialsModal, UserSearchModal
+from gemio.tui import GemioApp, MaterialsModal
 from gemio.tui.widgets import (
     ActivityBar,
     ChatTimeline,
@@ -170,10 +170,9 @@ async def test_user_prompt_renders_raw_plain_text_while_assistant_renders_markdo
                 assert len(list(app.timeline.query(TurnWidget))) == 0
 
 
-async def test_slash_commands_web_badge_toggle_and_materials_management(tmp_path):
+async def test_slash_commands_header_updates_and_materials_management(tmp_path):
     """
-    1. デフォルト +WEB で起動し、ヘッダーの #hdr-web クリックおよび /web on|off で
-       +WEB (.badge-web-on) / -WEB (.badge-web-off) が即座に切り替わること
+    1. ヘッダーにWeb検索バッジ(#hdr-web)が存在せず、/edit と /model が即時ヘッダーに反映されること
     2. /materials で MaterialsModal が開き、/materials rm / /materials clear で削除でき、
        ヘッダーの M: カウンタへ即座に反映されること
     """
@@ -183,35 +182,7 @@ async def test_slash_commands_web_badge_toggle_and_materials_management(tmp_path
         app = GemioApp(ctrl)
 
         async with app.run_test(size=(80, 24)) as pilot:
-            web_badge = app.status_header.query_one("#hdr-web", Static)
-            assert app.status_header.snapshot.web_badge_text == "+WEB"
-            assert web_badge.has_class("badge-web-on")
-            assert web_badge.styles.text_style.reverse is not True
-
-            await pilot.hover("#hdr-web")
-            await pilot.pause()
-            assert web_badge.styles.text_style.reverse is True
-
-            # 1. #hdr-web バッジのクリックで -WEB (.badge-web-off) に切り替わること
-            await pilot.click("#hdr-web")
-            await pilot.pause()
-            assert app.status_header.snapshot.web_badge_text == "-WEB"
-            assert web_badge.has_class("badge-web-off")
-            assert not web_badge.has_class("badge-web-on")
-
-            await pilot.hover("#hdr-project")
-            await pilot.pause()
-            assert web_badge.styles.text_style.reverse is not True
-            await pilot.hover("#hdr-web")
-            await pilot.pause()
-            assert web_badge.styles.text_style.reverse is True
-
-            # /web on で +WEB に戻ること
-            app.composer.editor.insert("/web on")
-            await pilot.press("ctrl+j")
-            await pilot.pause()
-            assert app.status_header.snapshot.web_badge_text == "+WEB"
-            assert web_badge.has_class("badge-web-on")
+            assert len(app.status_header.query("#hdr-web")) == 0
 
             # /edit と /model の即時ヘッダー更新
             app.composer.editor.insert("/edit on")
@@ -224,7 +195,7 @@ async def test_slash_commands_web_badge_toggle_and_materials_management(tmp_path
             await pilot.pause()
             assert app.status_header.snapshot.current_model == "gemini-4-argon"
 
-            # 2. /materials で管理モーダルが開くこと
+            # /materials で管理モーダルが開くこと
             ctrl.add_user_material("設計メモ", "前提仕様の内容")
             app.composer.editor.insert("/materials")
             await pilot.press("ctrl+j")
@@ -364,7 +335,6 @@ async def test_phase1_layout_header_copy_buttons_collapsible_and_composer_height
                 "#hdr-project",
                 "#hdr-mode",
                 "#hdr-approval",
-                "#hdr-web",
                 "#hdr-model",
                 "#hdr-tokens",
             ):
@@ -489,93 +459,65 @@ async def test_thinking_model_enables_thoughts_and_displays_in_activity_group(tm
             assert turns[0].assistant_card.response_text == "最終的な結論です。"
 
 
-async def test_request_user_search_in_tui_opens_modal_and_injects_material_immediately_in_same_turn(
+async def test_manual_material_registered_via_modal_is_injected_into_chat_turn(
     tmp_path,
 ):
     """
-    TRUST モード中に ChatAgent が request_user_search を呼び出した際:
-    1. UserSearchModal が開き、ユーザーがテキストを貼り付けて [前提資料に追加し送信] を押すと
-       MaterialStore に AI 指定タイトルで登録され、ヘッダーの M:1 カウンタが即更新されること
-    2. 同じターン内の直後のイテレーション（2回目の generate_content 呼び出し）の冒頭プロンプトへ
-       登録された資料が即座に注入されていること、および TRUST モードが維持されていること
+    MaterialsModal から手動登録した作業前提資料がヘッダー M:1 へ反映され、
+    続く通常対話ターンのプロンプト先頭へ自動注入されること
     """
+    from textual.widgets import Input, TabbedContent
+
     cfg = AppConfig(project_path=tmp_path)
     with patch("gemio.core.client.genai.Client"):
         ctrl = GemioController(cfg)
-        ctrl.set_trust_mode(True)
         assert ctrl.ai_client is not None
-
-        fc_search = types.Content(
-            role="model",
-            parts=[
-                types.Part.from_function_call(
-                    name="request_user_search",
-                    args={
-                        "purpose": "最新のPythonパッケージング仕様を確認するため",
-                        "queries": ["Python packaging pyproject.toml PEP 735"],
-                        "what_to_check": "dependency-groups の書式",
-                        "suggested_title": "PEP 735 Dependency Groups",
-                    },
-                )
-            ],
-        )
-        resp_tool = MagicMock(
-            candidates=[MagicMock(content=fc_search)],
-            function_calls=[fc_search.parts[0].function_call],
-            text="",
-        )
-        resp_final = MagicMock(
-            candidates=[],
-            function_calls=None,
-            text="PEP 735 の形式に基づいて設定を案内しました。",
-        )
 
         captured_contents_calls: list[list[types.Content]] = []
 
         def fake_generate_content(contents, **kwargs):
             captured_contents_calls.append(list(contents))
-            if len(captured_contents_calls) == 1:
-                return resp_tool
-            return resp_final
+            return MagicMock(
+                candidates=[],
+                function_calls=None,
+                text="PEP 735 の形式に基づいて設定を案内しました。",
+            )
 
         with patch.object(
             ctrl.ai_client, "generate_content", side_effect=fake_generate_content
         ):
             app = GemioApp(ctrl)
-            async with app.run_test(size=(80, 24)) as pilot:
-                app.composer.editor.insert("最新のdependency-groups仕様で設定して")
+            async with app.run_test(size=(90, 28)) as pilot:
+                app.composer.editor.insert("/materials")
                 await pilot.press("ctrl+j")
+                await pilot.pause()
+                assert isinstance(app.screen, MaterialsModal)
 
-                for _ in range(40):
-                    await pilot.pause(0.02)
-                    if isinstance(app.screen, UserSearchModal):
-                        break
-                assert isinstance(app.screen, UserSearchModal)
-
-                ta = app.screen.query_one("#user-search-textarea", TextArea)
-                ta.load_text("[dependency-groups]\ndev = ['pytest>=9.0']")
+                app.screen.query_one("#materials-tabs", TabbedContent).active = "tab-mat-add"
+                await pilot.pause()
+                app.screen.query_one("#mat-add-title", Input).value = "PEP 735 Dependency Groups"
+                app.screen.query_one("#mat-add-content", TextArea).load_text(
+                    "[dependency-groups]\ndev = ['pytest>=9.0']"
+                )
+                await pilot.pause()
+                await pilot.click("#btn-mat-add-submit")
+                await pilot.pause()
+                await pilot.click("#btn-close")
                 await pilot.pause()
 
-                await pilot.click("#btn-save-material")
+                assert app.status_header.snapshot.materials_count == 1
+
+                app.composer.editor.insert("この仕様で設定して")
+                await pilot.press("ctrl+j")
                 await app.workers.wait_for_complete()
                 await pilot.pause()
 
-                assert len(captured_contents_calls) == 2
-                # 2回目のAPI呼び出し（同ターン次イテレーション）の冒頭ユーザー発話に資料が即注入されていること
-                second_turn_first_text = captured_contents_calls[1][0].parts[0].text
-                assert "【作業前提資料】" in second_turn_first_text
-                assert "PEP 735 Dependency Groups" in second_turn_first_text
-                assert "[dependency-groups]" in second_turn_first_text
-
-                assert app.status_header.snapshot.materials_count == 1
-                assert ctrl.project.trust_mode is True
-                turns = list(app.timeline.query(TurnWidget))
-                assert len(turns) == 1
-                assert "request_user_search" in turns[0].activity_group.tool_names
-                assert (
-                    turns[0].assistant_card.response_text
-                    == "PEP 735 の形式に基づいて設定を案内しました。"
-                )
+                assert len(captured_contents_calls) == 1
+                sent_text = captured_contents_calls[0][0].parts[0].text
+                assert "【作業前提資料】" in sent_text
+                assert "PEP 735 Dependency Groups" in sent_text
+                assert "[dependency-groups]" in sent_text
+                assert "【ユーザーの指示】\nこの仕様で設定して" in sent_text
 
 
 async def test_compact_command_immediately_updates_header_and_token_modal(tmp_path):

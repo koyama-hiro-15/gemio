@@ -2,7 +2,7 @@
 ワーカースレッド（ChatAgent / Project）と Textual メインスレッド（ModalScreen）を繋ぐ同期確認ブリッジ。
 
 メインイベントループを一切ブロックすることなく、ワーカースレッドからの承認要求・質問・
-検索協力依頼・上限確認で ModalScreen を表示し、ユーザーの応答が確定するまでワーカースレッド側のみを安全に待機させます。
+上限確認で ModalScreen を表示し、ユーザーの応答が確定するまでワーカースレッド側のみを安全に待機させます。
 """
 
 import threading
@@ -11,7 +11,6 @@ from typing import Any, Callable, TypeVar
 from textual.app import App
 from textual.screen import ModalScreen
 
-from gemio.app.callbacks import UserSearchReply, UserSearchRequest
 from gemio.core.exceptions import AgentExecutionAborted
 
 T = TypeVar("T")
@@ -33,10 +32,6 @@ class ThreadModalBridge:
             [str, list[str] | None, str], ModalScreen[str]
         ]
         | None = None,
-        user_search_screen_factory: Callable[
-            [UserSearchRequest], ModalScreen[UserSearchReply]
-        ]
-        | None = None,
         iteration_limit_screen_factory: Callable[
             [], ModalScreen[tuple[bool, int]]
         ]
@@ -46,7 +41,6 @@ class ThreadModalBridge:
         self.app = app
         self.approval_screen_factory = approval_screen_factory
         self.ask_user_screen_factory = ask_user_screen_factory
-        self.user_search_screen_factory = user_search_screen_factory
         self.iteration_limit_screen_factory = iteration_limit_screen_factory
         self.on_kill_requested = on_kill_requested
 
@@ -182,19 +176,6 @@ class ThreadModalBridge:
                 "ユーザーによって作業の強制中止（Abort）が選択されました。"
             )
         return response
-
-    def request_user_search(self, request: UserSearchRequest) -> UserSearchReply:
-        """
-        外部検索協力モーダルを表示し、UserSearchReply を返します。
-        """
-        if self.user_search_screen_factory is None:
-            return UserSearchReply(action="skip")
-
-        factory = self.user_search_screen_factory
-        return self.show_modal_and_wait(
-            lambda: factory(request),
-            default_on_cancel=UserSearchReply(action="abort"),
-        )
 
     def confirm_iteration_limit(self) -> tuple[bool, int]:
         """連続ツール呼び出し上限到達時の確認モーダルを表示します。"""

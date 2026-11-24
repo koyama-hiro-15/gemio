@@ -65,13 +65,6 @@ class ModelCommand:
 
 
 @dataclass(frozen=True)
-class WebModeCommand:
-    """AIによる外部検索支援ツール (+WEB / -WEB) 切替コマンド (/web [on|off])。"""
-
-    enable: bool | None = None
-
-
-@dataclass(frozen=True)
 class MaterialsCommand:
     """作業前提資料管理コマンド (/materials [clear | rm <id>])。"""
 
@@ -108,7 +101,6 @@ ParsedInput = Union[
     EditModeCommand,
     TrustModeCommand,
     ModelCommand,
-    WebModeCommand,
     MaterialsCommand,
     CopyCommand,
     CompactCommand,
@@ -171,11 +163,6 @@ def parse_slash_command(raw_input: str) -> ParsedInput | None:
             return ModelCommand(target_model=parts[1].strip())
         return ModelCommand(target_model=None)
 
-    if lower == "/web" or lower.startswith("/web "):
-        parts = lower.split()
-        enable = _parse_optional_bool_flag(parts[1]) if len(parts) > 1 else None
-        return WebModeCommand(enable=enable)
-
     if lower in {"/materials", "/mat", "/mats"} or lower.startswith(
         ("/materials ", "/mat ", "/mats ")
     ):
@@ -227,6 +214,5 @@ __all__ = [
     "SandboxCommand",
     "TokensCommand",
     "TrustModeCommand",
-    "WebModeCommand",
     "parse_slash_command",
 ]

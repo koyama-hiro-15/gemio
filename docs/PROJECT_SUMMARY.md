@@ -458,3 +458,9 @@
   - **App / TUI 層の刷新 (`src/gemio/app/`, `src/gemio/tui/`)**:
     - `request_user_search` ツールを結線し、AI提案クエリのプリフライト検査後に専用モーダル `UserSearchModal`（推奨クエリごとの `[Copy]` / ホスト環境限定 Google検索 `[Open]`、複数行 `TextArea`、リアルタイム入力テキスト診断、`[通常応答で送信]` vs `[前提資料に追加し送信]` 選択）を表示するフローを実装（`TRUST` モード維持、前提資料登録時は二重送信を避け同ターン次イテレーションへ即反映）。
     - コマンドを `/web [on|off]`（`+WEB` / `-WEB` 切替）と `/materials [clear | rm <id>]`（管理モーダル `MaterialsModal` 開覧・手動追加・削除）へ再編し、`TokenUsageModal` からの資料管理導線および全91件の単体・ヘッドレスTUIテスト合格を確認。
+- **2026年11月24日**: Web検索・Web検索支援機能の全面廃止と作業前提資料（`/materials`）の手動専用化（設計書 `#018`）
+  - **Web機能の全面撤去 (`src/gemio/core/`, `app/`, `tui/`, `cli/`)**:
+    - 実用面・操作負担の検証判断に基づき、`request_user_search` ツール、`UserSearchModal`、`UserSearchRequest` / `UserSearchReply`、`+WEB` / `-WEB` スイッチ（`/web` コマンド・`--no-web-search` CLIオプション・`#hdr-web` ヘッダーバッジ・`SessionSnapshot.web_search_enabled`）、`AgentLogCategory.SEARCH`、`TokenUsageTracker.search_api_calls`、`APP_WEB_SEARCH_*` インストラクションをすべて廃止。
+  - **作業前提資料管理（`/materials`）と入力診断の統合維持 (`src/gemio/core/context/materials.py`, `app/prompts.py`, `tests/`)**:
+    - `src/gemio/core/search.py` を廃止し、汎用的な入力テキスト診断・無害化機能（`diagnose_user_pasted_text()`, `sanitize_pasted_text()`, `InputTextDiagnosis`）を `src/gemio/core/context/materials.py` へ移設統合。
+    - `app/prompts.py` を `APP_MATERIALS_GUIDANCE_INSTRUCTION` へ整理し、テストスイートを整理・更新して全89件の単体・ヘッドレスTUIテスト合格を確認。

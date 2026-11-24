@@ -104,7 +104,6 @@ class TokenUsageModal(ModalScreen[str | None]):
         cum_total = int(u.get("cumulative_total_tokens", 0))
 
         chat_calls = int(u.get("chat_api_calls", 0))
-        search_calls = int(u.get("search_api_calls", 0))
         comp_calls = int(u.get("compaction_api_calls", 0))
         total_calls = int(u.get("total_api_calls", 0))
 
@@ -113,7 +112,7 @@ class TokenUsageModal(ModalScreen[str | None]):
         table.add_row("思考トークン累計 (Thoughts)", f"{cum_thought:,}", "Thinking推論プロセスで消費された総計")
         table.add_row("キャッシュヒット累計 (Cached)", f"{cum_cached:,}", "コンテキストキャッシュヒット総計")
         if cum_tool > 0:
-            table.add_row("ツール利用プロンプト累計", f"{cum_tool:,}", "Google検索等の組み込みツール総計")
+            table.add_row("ツール利用プロンプト累計", f"{cum_tool:,}", "組み込みツール処理の総計")
         table.add_row(
             Text("累積合計トークン (Total)", style="bold cyan"),
             Text(f"{cum_total:,}", style="bold cyan"),
@@ -122,7 +121,7 @@ class TokenUsageModal(ModalScreen[str | None]):
         table.add_row(
             "APIリクエスト回数 (Calls)",
             f"{total_calls:,} 回",
-            f"対話: {chat_calls} / 検索: {search_calls} / 要約圧縮: {comp_calls}",
+            f"対話: {chat_calls} / 要約圧縮: {comp_calls}",
         )
 
         self.query_one("#btn-close", Button).focus()

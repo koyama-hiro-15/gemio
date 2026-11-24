@@ -19,8 +19,11 @@ from textual.widgets import (
     TextArea,
 )
 
-from gemio.core.context.materials import ReferenceMaterial
-from gemio.core.search import diagnose_user_pasted_text, sanitize_pasted_text
+from gemio.core.context.materials import (
+    ReferenceMaterial,
+    diagnose_user_pasted_text,
+    sanitize_pasted_text,
+)
 
 
 class MaterialsModal(ModalScreen[bool]):
@@ -98,18 +101,18 @@ class MaterialsModal(ModalScreen[bool]):
                         id="mat-add-content",
                         classes="materials-add-textarea",
                     )
-                    with Horizontal(classes="user-search-diag-row"):
+                    with Horizontal(classes="materials-diag-row"):
                         yield Static(
                             "",
                             id="mat-add-diagnosis",
-                            classes="user-search-diagnosis",
+                            classes="materials-diagnosis",
                         )
                         yield Button(
                             "無害化",
                             id="btn-mat-sanitize",
                             variant="warning",
                             compact=True,
-                            classes="user-search-aux-btn",
+                            classes="materials-aux-btn",
                         )
                         yield Button(
                             "資料に追加",

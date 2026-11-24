@@ -32,7 +32,6 @@ class SessionSnapshot:
     container_name: str | None
     approval_mode: str
     current_model: str
-    web_search_enabled: bool = True
     context_tokens: int = 0
     cumulative_tokens: int = 0
     total_api_calls: int = 0
@@ -87,16 +86,6 @@ class SessionSnapshot:
         if self.approval_mode == APPROVAL_MODE_EDIT:
             return "エディットモード（編集自動 / 削除・コマンド確認）"
         return "通常承認モード（都度確認）"
-
-    @property
-    def web_badge_text(self) -> str:
-        """ステータスバー向けの外部検索支援ツール有効/無効バッジ表記（+WEB / -WEB）を返します。"""
-        return "+WEB" if self.web_search_enabled else "-WEB"
-
-    @property
-    def web_display_label(self) -> str:
-        """案内画面向けの日本語検索支援状態表記を返します。"""
-        return "Web検索支援: ON" if self.web_search_enabled else "Web検索支援: OFF"
 
 
 __all__ = [

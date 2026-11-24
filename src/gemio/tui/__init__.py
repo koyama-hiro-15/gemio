@@ -16,7 +16,6 @@ from gemio.tui.screens import (
     SandboxStatusModal,
     TokenUsageModal,
     TrustConsentModal,
-    UserSearchModal,
 )
 
 __all__ = [
@@ -34,5 +33,4 @@ __all__ = [
     "ThreadModalBridge",
     "TokenUsageModal",
     "TrustConsentModal",
-    "UserSearchModal",
 ]

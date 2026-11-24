@@ -29,9 +29,6 @@ from gemio.app import (
     SandboxCommand,
     TokensCommand,
     TrustModeCommand,
-    UserSearchReply,
-    UserSearchRequest,
-    WebModeCommand,
     parse_slash_command,
 )
 from gemio.core.agent import ChatTurnResult
@@ -60,7 +57,6 @@ from gemio.tui.screens import (
     SandboxStatusModal,
     TokenUsageModal,
     TrustConsentModal,
-    UserSearchModal,
 )
 from gemio.tui.widgets import (
     ActivityBar,
@@ -99,10 +95,6 @@ class GemioApp(App[int]):
             [str, list[str] | None, str], ModalScreen[str]
         ]
         | None = None,
-        user_search_screen_factory: Callable[
-            [UserSearchRequest], ModalScreen[UserSearchReply]
-        ]
-        | None = None,
         iteration_limit_screen_factory: Callable[
             [], ModalScreen[tuple[bool, int]]
         ]
@@ -117,15 +109,6 @@ class GemioApp(App[int]):
             self,
             approval_screen_factory=approval_screen_factory or ApprovalModal,
             ask_user_screen_factory=ask_user_screen_factory or AskUserModal,
-            user_search_screen_factory=(
-                user_search_screen_factory
-                or (
-                    lambda req: UserSearchModal(
-                        req,
-                        forbidden_paths=self.controller.get_forbidden_paths_for_diagnosis(),
-                    )
-                )
-            ),
             iteration_limit_screen_factory=(
                 iteration_limit_screen_factory or IterationLimitModal
             ),
@@ -283,8 +266,6 @@ class GemioApp(App[int]):
             self.action_show_sandbox()
         elif message.target == "approval":
             self.action_cycle_approval()
-        elif message.target == "web_search":
-            self._execute_web_search_toggle(None)
         elif message.target == "model":
             self.action_select_model()
         elif message.target == "tokens":
@@ -339,8 +320,6 @@ class GemioApp(App[int]):
             self._execute_rewind(parsed.steps)
         elif isinstance(parsed, CompactCommand):
             self._start_compact_worker(parsed.keep_recent_turns)
-        elif isinstance(parsed, WebModeCommand):
-            self._execute_web_search_toggle(parsed.enable)
         elif isinstance(parsed, MaterialsCommand):
             if parsed.action == "clear":
                 self._clear_materials_action()
@@ -359,26 +338,6 @@ class GemioApp(App[int]):
         new_model = self.controller.set_model(target_model)
         self.refresh_status_and_welcome()
         self.notify(f"AIモデルを切り替えました: {new_model}")
-
-    def _execute_web_search_toggle(self, enable: bool | None = None) -> None:
-        if self.controller.is_busy:
-            self.notify(
-                "AI処理中は外部検索支援設定を変更できません。",
-                severity="warning",
-            )
-            return
-        enabled, changed = self.controller.set_web_search_enabled(enable)
-        self.refresh_status_and_welcome()
-        if not changed:
-            label = "+WEB (有効)" if enabled else "-WEB (無効)"
-            self.notify(f"AIからの外部検索協力依頼はすでに {label} です。")
-            return
-        if enabled:
-            self.notify(
-                "+WEB: AIからの外部検索協力依頼を有効化しました。"
-            )
-        else:
-            self.notify("-WEB: AIからの外部検索協力依頼を無効化しました。")
 
     def _clear_materials_action(self) -> None:
         if self.controller.is_busy:

@@ -73,24 +73,6 @@ StatusHeader Horizontal {
     color: $error;
 }
 
-#hdr-approval {
-    padding: 0 0 0 1;
-}
-
-.badge-web-on {
-    color: $accent;
-}
-
-.header-badge.badge-web-off {
-    color: $text-muted;
-    text-style: none;
-}
-
-.header-badge.badge-web-off:hover {
-    color: $text;
-    text-style: bold reverse;
-}
-
 .badge-model {
     color: $accent;
 }
@@ -163,12 +145,6 @@ UserMessageCard {
 .card-role-aborted {
     text-style: bold;
     color: $error;
-    width: 1fr;
-}
-
-.card-role-search {
-    text-style: bold;
-    color: $accent;
     width: 1fr;
 }
 
@@ -254,101 +230,30 @@ AssistantMessageCard Markdown {
     padding: 0;
 }
 
-/* UserSearchModal / MaterialsModal 専用レイアウト (80x24 対応) */
-UserSearchModal,
+/* MaterialsModal 専用レイアウト (80x24 対応) */
 MaterialsModal {
     align: center middle;
     background: $background 60%;
 }
 
-.user-search-dialog,
 .materials-dialog {
     height: 92%;
     max-height: 36;
     padding: 0 2;
 }
 
-.user-search-guide {
-    width: 100%;
-    height: auto;
-    max-height: 7;
-    background: $surface;
-    border: solid $primary-darken-2;
-    padding: 0 1;
-}
-
-.user-search-meta {
-    width: 100%;
-    height: auto;
-}
-
-.user-search-label {
-    width: 100%;
-    height: auto;
-    color: $accent;
-    text-style: bold;
-}
-
-.user-search-query-row {
+.materials-diag-row {
     width: 100%;
     height: auto;
     align: left middle;
 }
 
-.user-search-query-text {
-    width: 1fr;
-    height: auto;
-    color: $text;
-}
-
-.query-op-btn {
-    width: auto;
-    min-width: 6;
-    height: 1;
-    border: none;
-    padding: 0 1;
-    margin-left: 1;
-    background: $primary;
-    color: $text;
-}
-
-.query-op-btn:hover, .query-op-btn:focus {
-    background: $accent;
-    color: $surface;
-    text-style: bold;
-}
-
-.user-search-title-preview {
-    width: 100%;
-    height: auto;
-    color: $text-muted;
-    padding: 0;
-}
-
-.user-search-textarea {
-    width: 100%;
-    height: 1fr;
-    min-height: 4;
-    border: tall $primary-darken-1;
-    background: $surface;
-}
-
-.user-search-textarea:focus {
-    border: tall $accent;
-}
-
-.user-search-diag-row {
-    width: 100%;
-    height: auto;
-    align: left middle;
-}
-
-.user-search-diagnosis {
+.materials-diagnosis {
     width: 1fr;
     height: auto;
 }
 
-.user-search-aux-btn {
+.materials-aux-btn {
     width: auto;
     min-width: 8;
     height: 1;

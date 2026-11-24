@@ -182,21 +182,6 @@ class ActivityGroup(Widget):
 
         self._append_activity_line(line)
 
-    def add_search_info(self, timestamp: str, body: str) -> None:
-        """外部検索協力依頼や作業前提資料登録のサマリログを折りたたみログへ追加します。"""
-        cleaned = body.strip()
-        if not cleaned:
-            return
-        self.display = True
-
-        line = Text()
-        if timestamp:
-            line.append(f"[{timestamp}] ", style="dim")
-        line.append("[Search Assist] ", style="bold cyan")
-        line.append(cleaned, style="cyan")
-
-        self._append_activity_line(line)
-
     def add_thought(self, timestamp: str, body: str) -> None:
         """逐次取得された思考テキスト（Thinking）を1件ずつリアルタイムで展開領域へ追加します。"""
         cleaned = body.strip()
@@ -358,9 +343,6 @@ class TurnWidget(Widget):
             return None
         if category == AgentLogCategory.WARNING:
             self.activity_group.add_warning(ts, body)
-            return None
-        if category == AgentLogCategory.SEARCH:
-            self.activity_group.add_search_info(ts, body)
             return None
         if category == AgentLogCategory.ABORT:
             self.assistant_card.set_response(body, timestamp=ts, aborted=True)

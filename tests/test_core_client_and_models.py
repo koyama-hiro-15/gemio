@@ -83,7 +83,7 @@ def test_resolve_model_name_aliases_case_and_passthrough():
         assert expected_id in preset_ids
 
     assert AgentLogCategory.TOOL == "tool"
-    assert AgentLogCategory.SEARCH == "search"
+    assert not hasattr(AgentLogCategory, "SEARCH")
 
 
 def test_genai_client_initialization_model_switching_and_retry():
@@ -138,10 +138,10 @@ def test_genai_client_initialization_model_switching_and_retry():
         mock_sdk_cls.assert_called_once_with(api_key="DUMMY_GEMINI_CONTAINER_INPUT_KEY")
 
 
-def test_token_usage_tracker_separates_chat_search_and_compaction_sources():
+def test_token_usage_tracker_separates_chat_and_compaction_sources():
     """
-    TokenUsageTracker が chat / search / compaction のAPI呼び出し回数を区別し、
-    search や compaction の入力トークン数で直近対話コンテキスト量（last_prompt_tokens）を上書きしないこと
+    TokenUsageTracker が chat / compaction のAPI呼び出し回数を区別し、
+    compaction の入力トークン数で直近対話コンテキスト量（last_prompt_tokens）を上書きしないこと
     """
     tracker = TokenUsageTracker()
 
@@ -158,28 +158,16 @@ def test_token_usage_tracker_separates_chat_search_and_compaction_sources():
     assert snap1["chat_history_messages"] == 2
     assert snap1["materials_count"] == 1
 
-    # 2. Web検索 (search) -> last_prompt_tokens(2500) は維持され、累積に加算される
-    resp_search = SimpleNamespace(
-        usage_metadata=_make_usage(prompt=300, candidates=250, tool_use=150, total=700)
-    )
-    tracker.record(resp_search, source="search")
-    snap2 = tracker.get_snapshot()
-    assert snap2["last_prompt_tokens"] == 2500
-    assert snap2["cumulative_total_tokens"] == 2800 + 700
-    assert snap2["cumulative_tool_use_tokens"] == 150
-    assert snap2["search_api_calls"] == 1
-    assert snap2["total_api_calls"] == 2
-
-    # 3. 要約圧縮 (compaction) -> compaction_api_calls に記録され累積加算される
+    # 2. 要約圧縮 (compaction) -> last_prompt_tokens(2500) は維持され、累積に加算される
     resp_compact = SimpleNamespace(
         usage_metadata=_make_usage(prompt=1800, candidates=300, total=2100)
     )
     tracker.record(resp_compact, source="compaction")
-    snap3 = tracker.get_snapshot()
-    assert snap3["last_prompt_tokens"] == 2500
-    assert snap3["compaction_api_calls"] == 1
-    assert snap3["total_api_calls"] == 3
-    assert snap3["cumulative_total_tokens"] == 2800 + 700 + 2100
+    snap2 = tracker.get_snapshot()
+    assert snap2["last_prompt_tokens"] == 2500
+    assert snap2["compaction_api_calls"] == 1
+    assert snap2["total_api_calls"] == 2
+    assert snap2["cumulative_total_tokens"] == 2800 + 2100
 
 
 def test_models_module_has_no_sdk_dependency_and_filters_gemini3_plus_text_models():

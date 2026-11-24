@@ -10,14 +10,15 @@
 
 ## [Unreleased]
 
-### Changed（変更）
-- **Web 検索連携を「人間介在型 Web 検索支援 (`#017`)」へ刷新**:
-  - 利用規約適合性レビューの結果、Gemini API の Google Search Grounding 連携（`SearchAgent`・`/search`）を廃止し、**`request_user_search` ツール＋専用ダイアログ（`UserSearchModal`）**へ切り替えました。
-  - AI が提示する調査目的・確認観点・推奨クエリに対し、`[Copy]` / Google検索 `[Open]` ボタン（コンテナ内起動 `in_container` 時は非表示）、複数行 `TextArea`、リアルタイム**入力テキスト診断**（APIキー/秘密鍵等の機密情報ブロック、パス文字列の注意喚起、不可視文字・制御トークンのワンクリック無害化、IPI疑い/サイズ警告）、および **「通常応答で送信」vs「前提資料に追加し送信」** の選択を提供しました。
-  - スラッシュコマンドをスイッチ専用の **`/web [on|off]`** と、作業前提資料の閲覧・手動追加・削除を行う **`/materials [clear | rm <id>]`**（`MaterialsModal`）へ再編しました。
+### Added（追加）
+- **作業前提資料管理コマンド (`/materials`) と専用モーダル (`MaterialsModal`)**:
+  - セッション内で保持している「作業前提資料（`MaterialStore`）」の一覧閲覧・プレビュー・手動追加・個別削除・全クリアを行う **`/materials [clear | rm <id>]`**（`/mat`）コマンドおよび `MaterialsModal`（`TokenUsageModal` からの遷移ボタン付き）を追加しました。
+  - 手動登録時のリアルタイム**入力テキスト診断**（APIキー/秘密鍵等の機密情報ブロック、ローカルパス注意喚起、不可視文字・制御トークンのワンクリック無害化、IPI疑い/サイズ警告）を備えています。
 
 ### Removed（削除）
-- Google Search Grounding 用の `SearchAgent`、`SearchResult`、`/search`（`/s`）コマンド、`SearchTurnWidget`、`MaterialKind.WEB_SEARCH` を削除しました。
+- **Web検索およびWeb検索支援機能の全面廃止 (`#017` / `#018`)**:
+  - 利用規約適合性および実用面・操作負担の検証結果に基づき、すべてのWeb検索・Web検索支援機能を廃止しました。
+  - 旧 Google Search Grounding 関連（`SearchAgent`、`SearchResult`、`/search`・`/s` コマンド、`SearchTurnWidget`、`MaterialKind.WEB_SEARCH`）および人間介在型Web検索支援関連（`request_user_search` ツール、`UserSearchModal`、`+WEB` / `-WEB` スイッチ、`/web` コマンド、`--no-web-search` CLIオプション、`core/search.py`）を削除しました。
 
 ---
 

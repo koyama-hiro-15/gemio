@@ -6,7 +6,7 @@
 **対象システム:** Gemio リポジトリ全体 (`src/gemio/`, `tests/`, `manuals/`, `docs/`, `Dockerfile`, `compose.yaml`)  
 
 ### 【要約】
-本マニュアルは、Gemio本体への機能追加・バグ修正・コードレビューを行うコントリビューター向けの実践開発ガイドです。開発環境の構築、厳守すべきアーキテクチャ制約、よく行う機能拡張（スラッシュコマンド追加、Projectツール追加、標準スキル追加、Core基盤APIのUI接続）の具体的な実装手順、セキュリティ定数変更時の同期チェックリスト、全12モジュールの単体テスト設計、およびドキュメント運用ルールを定めます。
+本マニュアルは、Gemio本体への機能追加・バグ修正・コードレビューを行うコントリビューター向けの実践開発ガイドです。開発環境の構築、厳守すべきアーキテクチャ制約、よく行う機能拡張（スラッシュコマンド追加、Projectツール追加、標準スキル追加、Core基盤APIのUI接続）の具体的な実装手順、セキュリティ定数変更時の同期チェックリスト、全11モジュールの単体テスト設計、およびドキュメント運用ルールを定めます。
 （※内部構造や各クラスの仕様詳細については、先に **[`07_ARCHITECTURE_REFERENCE.md`](./07_ARCHITECTURE_REFERENCE.md)** を参照してください。）
 
 ---
@@ -25,7 +25,7 @@
    - [3.5 先行実装済みのCoreコンテキストAPIをApp/TUIへ接続する](#35-先行実装済みのcoreコンテキストapiをapptuiへ接続する)
 4. [セキュリティ・定数変更時の同期チェックリスト](#4-セキュリティ定数変更時の同期チェックリスト)
 5. [単体テストスイート（`pytest`）の構成とテスト作成ガイド](#5-単体テストスイートpytestの構成とテスト作成ガイド)
-   - [5.1 全12テストモジュールの責務一覧](#51-全12テストモジュールの責務一覧)
+   - [5.1 全11テストモジュールの責務一覧](#51-全11テストモジュールの責務一覧)
    - [5.2 単体テスト作成時の鉄則（オフライン・Docker不要・シークレット非混入）](#52-単体テスト作成時の鉄則オフラインdocker不要シークレット非混入)
 6. [ドキュメント運用ルール](#6-ドキュメント運用ルール)
    - [6.1 ドキュメント体系の役割分担（`manuals/` vs `docs/`）](#61-ドキュメント体系の役割分担manuals-vs-docs)
@@ -179,23 +179,22 @@ pytest  # ホスト側でも docker exec gemio-sandbox pytest でも実行可能
 
 ## 5. 単体テストスイート（`pytest`）の構成とテスト作成ガイド
 
-### 5.1 全12テストモジュールの責務一覧
+### 5.1 全11テストモジュールの責務一覧
 
-`tests/` 配下は、パッケージ構造と1対1に対応する12モジュールに整理されています。
+`tests/` 配下は、パッケージ構造と1対1に対応する11モジュールに整理されています。
 
 | レイヤー | テストファイル | 主な検証内容 |
 | :--- | :--- | :--- |
 | **Core** | `tests/test_core_client_and_models.py` | `ModelInfo`・テキスト生成/Thinking対応判定・エイリアス解決、`GenAIClient` の動的モデルカタログキャッシュ・Thinking 400フォールバック・503リトライ回復、`TokenUsageTracker` の分離集計 |
-| **Core** | `tests/test_core_context.py` | `ChatTurn` 履歴管理・`rewind`・範囲抽出・Markdown整形、`MaterialStore` の物理パス非保持・SHA-256重複排除・`source_hash` 更新、`ContextCompactor`、`ChatSession` 先頭注入 |
+| **Core** | `tests/test_core_context.py` | `ChatTurn` 履歴管理・`rewind`・範囲抽出・Markdown整形、`MaterialStore` の物理パス非保持・SHA-256重複排除・`source_hash` 更新、入力テキスト診断 `diagnose_user_pasted_text` / `sanitize_pasted_text`、`ContextCompactor`、`ChatSession` 先頭注入 |
 | **Core** | `tests/test_core_tools_and_prompts.py` | 標準日時ツール、`ToolRegistry` / `StaticToolProvider`、`.gemio/tools/` ローダーと物理パス秘匿、`agent_tools` と `agent_toolsets` の一致検証、`SystemPromptComposer` |
 | **Core** | `tests/test_core_skills_and_dynamic_tools.py` | `parse_skill_markdown`、固定2箇所からの `SkillLoader`・優先上書き・遅延ロード例外時のパス秘匿、`DynamicToolsetProvider` (`request_tools`) と `activate_skill` のループ途中即時反映 |
 | **Core** | `tests/test_core_agent_chat.py` | `ChatAgent` のFunction Callingループ、`ask_user` / Abort時の複数 `function_call` ペア整合性、ループ上限継続とロールバック、503中断時のツール結果保持、`MaterialStore` 操作非露出検証 |
-| **Core** | `tests/test_core_agent_search.py` | `validate_search_query_safety`（物理パス・機密キー・長文遮断）、貼り付け入力テキスト診断 `diagnose_user_pasted_text`（機密ブロック・パス注意・IPI/サイズ警告）、`sanitize_pasted_text`、Spotlighting整形検証 |
 | **Project** | `tests/test_project_base.py` | ファイル操作一式、パストラバーサル・シンボリックリンク遮断、機密ファイル/ディレクトリ・`.git`・`.devcontainer`・`.gemio`・`*.egg-info` 保護、BFS探索と省略通知、3段階承認、サーキットブレーカー |
 | **Project** | `tests/test_project_developer.py` | コンテナ実体判定、脱獄構成の `SandboxSecurityError` 拒否、環境変数スクラブ、値非保持の機密キー名検出、`parse_proc_mountinfo` / `classify_workspace_entry` / `inspect_sandbox_status`、`run_sandbox_command` 全文表示・タイムアウト・プロセスキル |
-| **App** | `tests/test_app_controller_and_commands.py` | `app/` のUI非依存AST検査、`AppConfig`、全スラッシュコマンド解析（`/web`, `/materials` 含む）、`GemioController` のAPIキー遅延設定・`request_user_search` 全フロー・資料管理API・安全なターン中断 |
-| **TUI** | `tests/test_tui_app.py` | 最小 `80×24` での4ゾーンマウント、`PromptComposer` キー操作・Undo全消去、ユーザー入力の生テキスト保持描画 vs AI回答のMarkdown描画、`ActivityGroup` 折りたたみ、`Esc` ターン中断 |
-| **TUI** | `tests/test_tui_modals.py` | 全11種 `ModalScreen`（`UserSearchModal`, `MaterialsModal` 含む）の80×24表示・入力テキスト診断・無害化・`[Open]`/`[Copy]`・`Ctrl+P` コマンドパレットの往復検証 |
+| **App** | `tests/test_app_controller_and_commands.py` | `app/` のUI非依存AST検査、`AppConfig`、全スラッシュコマンド解析（`/materials` 含む）、`GemioController` のAPIキー遅延設定・Web機能非搭載確認・資料管理API・安全なターン中断 |
+| **TUI** | `tests/test_tui_app.py` | 最小 `80×24` での4ゾーンマウント、`PromptComposer` キー操作・Undo全消去、ユーザー入力の生テキスト保持描画 vs AI回答のMarkdown描画、`ActivityGroup` 折りたたみ、`MaterialsModal` 登録資料のプロンプト注入、`Esc` ターン中断 |
+| **TUI** | `tests/test_tui_modals.py` | 全10種 `ModalScreen`（`MaterialsModal` 含む）の80×24表示・入力テキスト診断・無害化・`Ctrl+P` コマンドパレットの往復検証 |
 | **CLI** | `tests/test_cli_main.py` | コードベースからの `prompt_toolkit` 完全撤去＆トップレベルUI非依存AST検査、`parse_args`、非TTY/不正パス/セキュリティ違反時のプリフライト検証、`GemioApp` 起動・終了コード伝播 |
 
 ---
@@ -266,3 +265,4 @@ pytest  # ホスト側でも docker exec gemio-sandbox pytest でも実行可能
 | 2026-11-21 | AI Agent | 運用中 | 動的モデルカタログ・Thinking統合（`#015`）および回答コピー操作の整理（`Ctrl+Y` を Redo 維持とし `/copy`・`[Copy]` ボタンへ集約）に伴い該当記載を更新。 |
 | 2026-11-23 | AI Agent | 運用中 | 作業エージェント連携型Web検索と `+WEB`/`-WEB` スイッチ（`#016`）の実装に伴い、単体テストモジュールの責務一覧を更新。 |
 | 2026-11-24 | AI Agent | 運用中 | 人間介在型 Web 検索支援（`#017`）の実装に伴い、テスト一覧表の `test_core_agent_search.py`・`test_app_controller_and_commands.py`・`test_tui_modals.py` 記述を更新。 |
+| 2026-11-24 | AI Agent | 運用中 | Web検索支援機能の全面廃止（`#018`）に伴い、テストモジュール一覧を11モジュール構成（`test_core_agent_search.py` 削除・入力診断を `test_core_context.py` へ統合）に更新。 |

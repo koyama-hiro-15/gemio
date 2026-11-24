@@ -36,7 +36,7 @@ DEFAULT_BACKOFF_FACTOR = 2.0
 class TokenUsageTracker:
     """
     セッション内のAPI呼び出し回数、直近の対話コンテキスト量、および累積トークン消費量を追跡するクラス。
-    通常対話（chat）、Web検索（search）、コンテキスト要約（compaction）を呼び出し元種別ごとに区別して記録します。
+    通常対話（chat）とコンテキスト要約（compaction）を呼び出し元種別ごとに区別して記録します。
     """
 
     def __init__(self) -> None:
@@ -56,7 +56,6 @@ class TokenUsageTracker:
             "cumulative_tool_use_tokens": 0,
             "cumulative_total_tokens": 0,
             "chat_api_calls": 0,
-            "search_api_calls": 0,
             "compaction_api_calls": 0,
             "total_api_calls": 0,
         }
@@ -74,11 +73,9 @@ class TokenUsageTracker:
 
         Args:
             response: Gemini API のレスポンスオブジェクト。
-            source: 呼び出し元種別 ("chat" | "search" | "compaction")。
+            source: 呼び出し元種別 ("chat" | "compaction")。
         """
-        if source == "search":
-            self._usage["search_api_calls"] += 1
-        elif source == "compaction":
+        if source == "compaction":
             self._usage["compaction_api_calls"] += 1
         else:
             self._usage["chat_api_calls"] += 1

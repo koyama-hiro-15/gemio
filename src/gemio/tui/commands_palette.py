@@ -83,11 +83,6 @@ class GemioCommandProvider(Provider):
                 lambda: app._execute_clear_session(clear_materials=True),
             ),
             (
-                "Web: AIからの外部検索協力依頼 (+WEB / -WEB) を切り替え (/web on|off)",
-                "作業エージェントからの外部検索支援ツール呼び出し (ON/OFF) をトグルします",
-                lambda: app._execute_web_search_toggle(None),
-            ),
-            (
                 "Materials: 作業前提資料の管理画面を開く (/materials)",
                 "作業前提資料の一覧閲覧・手動追加・削除・全クリアを行います",
                 app.action_show_materials,
